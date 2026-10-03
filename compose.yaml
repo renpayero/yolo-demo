@@ -1,0 +1,33 @@
+name: vision-demo
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:1-ffmpeg
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8554:8554"   # RTSP: acá publica la webcam (webcam.bat). Solo accesible desde esta PC.
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - ./media:/media:ro
+
+  app:
+    build: .
+    image: vision-demo-app:gpu
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+    gpus: all
+    ports:
+      # UI web: http://localhost:8000. Por defecto solo desde esta PC (el video muestra personas).
+      # Para abrirla desde otra PC de la red:  $env:BIND_ADDR="0.0.0.0"; docker compose up -d
+      - "${BIND_ADDR:-127.0.0.1}:8000:8000"
+    environment:
+      CAMERA_SOURCE: ${CAMERA_SOURCE:-}   # opcional: pisa camera.source de config.yaml
+    volumes:
+      - ./config.yaml:/srv/config.yaml:ro
+      - ./app:/srv/app:ro       # el código se toma de la carpeta: cambios con solo reiniciar
+      - ./tests:/srv/tests:ro
+      - vision-data:/data       # base SQLite (volumen de Docker, no carpeta de Windows)
+
+volumes:
+  vision-data:

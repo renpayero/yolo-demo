@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visión en planta — demo</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">Visión en planta <span class="tag">demo</span></h1>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab" role="tab" id="tab-live" data-panel="panel-live" aria-controls="panel-live" aria-selected="true">En vivo</button>
+      <button class="tab" role="tab" id="tab-zones" data-panel="panel-zones" aria-controls="panel-zones" aria-selected="false">Zonas</button>
+    </nav>
+    <p class="pill" id="conn-pill" role="status" data-level="idle"><span class="dot" aria-hidden="true"></span><span class="pill-text">Conectando…</span></p>
+  </header>
+
+  <main>
+    <section class="panel live" id="panel-live" role="tabpanel" aria-labelledby="tab-live">
+      <div class="video-frame">
+        <img id="live-video" alt="Video en vivo de la cámara con las personas detectadas">
+      </div>
+
+      <aside class="sidebar">
+        <section class="card" aria-labelledby="people-title">
+          <h2 id="people-title">Personas en cuadro</h2>
+          <p class="big-number" id="st-people">—</p>
+        </section>
+
+        <section class="card" aria-labelledby="live-zones-title">
+          <h2 id="live-zones-title">Zonas</h2>
+          <ul class="live-zones" id="live-zones"></ul>
+          <p class="empty" id="live-zones-empty">Sin zonas marcadas. Marcalas en la pestaña «Zonas».</p>
+        </section>
+
+        <section class="card" aria-labelledby="sys-title">
+          <h2 id="sys-title">Sistema</h2>
+          <dl class="kv">
+            <dt>Cámara</dt><dd id="st-camera">—</dd>
+            <dt>Fuente</dt><dd id="st-source" class="mono">—</dd>
+            <dt>Resolución</dt><dd id="st-resolution">—</dd>
+            <dt>Velocidad</dt><dd id="st-fps">—</dd>
+            <dt>Procesador</dt><dd id="st-device">—</dd>
+            <dt>Modelo</dt><dd id="st-model" class="mono">—</dd>
+            <dt>Reconexiones</dt><dd id="st-reconnects">—</dd>
+          </dl>
+        </section>
+      </aside>
+    </section>
+
+    <section class="panel zones" id="panel-zones" role="tabpanel" aria-labelledby="tab-zones" hidden>
+      <div class="editor">
+        <div class="toolbar">
+          <button type="button" class="btn btn-primary" id="zone-new">Nueva zona</button>
+          <button type="button" class="btn" id="zone-refresh">Actualizar imagen</button>
+          <span class="spacer"></span>
+          <a class="btn" id="zone-export" href="/api/zones/export" download>Exportar</a>
+          <label class="btn" title="Reemplaza todas las zonas por las del archivo">
+            Importar<input type="file" id="zone-import" accept=".json,application/json" hidden>
+          </label>
+        </div>
+        <div class="canvas-frame" id="zone-canvas-frame">
+          <canvas id="zone-canvas" aria-label="Imagen de la cámara para marcar zonas"></canvas>
+        </div>
+        <p class="hint" id="zone-hint" role="status"></p>
+      </div>
+
+      <aside class="sidebar">
+        <section class="card" id="zone-form-card" hidden>
+          <h2 id="zone-form-title">Nueva zona</h2>
+          <form id="zone-form" class="form" novalidate>
+            <label class="field">
+              <span>Nombre</span>
+              <input id="zone-name" maxlength="40" autocomplete="off" placeholder="Ej.: Lijado">
+            </label>
+            <fieldset class="field">
+              <legend>Tipo</legend>
+              <label class="radio"><input type="radio" name="zone-kind" value="work" checked> Estación de trabajo</label>
+              <label class="radio"><input type="radio" name="zone-kind" value="restricted"> Zona restringida</label>
+            </fieldset>
+            <p class="form-error" id="zone-error" role="alert"></p>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="zone-save">Guardar</button>
+              <button type="button" class="btn" id="zone-cancel">Cancelar</button>
+              <button type="button" class="btn btn-danger" id="zone-delete">Eliminar</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card" aria-labelledby="zone-list-title">
+          <h2 id="zone-list-title">Zonas de esta cámara</h2>
+          <ul class="zone-list" id="zone-list"></ul>
+          <p class="empty" id="zone-list-empty">Todavía no hay zonas. Tocá «Nueva zona» y marcá los vértices sobre la imagen.</p>
+        </section>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# Para PCs sin GPU NVIDIA:
+#   docker compose -f compose.yaml -f compose.cpu.yaml up -d --build
+# Usa PyTorch sin CUDA (imagen mucho más chica) y el modelo liviano (yolo26n).
+services:
+  app:
+    build:
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cpu
+    image: vision-demo-app:cpu
+    gpus: !reset []

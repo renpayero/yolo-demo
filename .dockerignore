@@ -1,0 +1,8 @@
+.git
+tools
+media
+data
+scripts
+**/__pycache__
+**/.pytest_cache
+*.md

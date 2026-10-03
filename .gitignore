@@ -1,0 +1,12 @@
+# Binarios descargados (ffmpeg portable, video de prueba)
+tools/
+media/*.avi
+media/*.mp4
+
+# Datos locales
+data/
+
+# Python
+__pycache__/
+.pytest_cache/
+*.pyc

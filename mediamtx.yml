@@ -1,0 +1,21 @@
+# Servidor de video de la demo. Lo que no se especifica toma los valores por defecto de mediamtx.
+logLevel: info
+rtspTransports: [tcp]
+
+# Protocolos que la demo no usa.
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+moq: no
+
+paths:
+  # Video de prueba (gente caminando, de los ejemplos de OpenCV), en loop, solo mientras alguien lo mira.
+  demo:
+    runOnDemand: >-
+      ffmpeg -hide_banner -loglevel error -re -stream_loop -1 -i /media/vtest.avi
+      -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 20
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnDemandRestart: yes
+  # Cualquier otra ruta (por ejemplo /webcam) acepta publicar y leer.
+  all_others:

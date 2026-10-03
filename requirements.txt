@@ -1,0 +1,11 @@
+# torch y torchvision se instalan antes, desde el índice de PyTorch (ver Dockerfile).
+# Variante "headless" de Ultralytics: trae opencv-python-headless (sin GUI, sin libs de sistema extra).
+ultralytics-opencv-headless==8.4.172
+opencv-python-headless==5.0.0.93
+numpy==2.5.2
+lap==0.5.13
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pyyaml==6.0.3
+pytest==9.1.1
+httpx==0.28.1

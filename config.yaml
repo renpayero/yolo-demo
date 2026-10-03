@@ -1,0 +1,31 @@
+# Configuración de la demo. Los cambios se aplican al reiniciar: docker compose restart app
+
+camera:
+  id: cam1
+  name: Webcam
+  # Fuente de video (cualquier URL que entienda FFmpeg):
+  #   rtsp://mediamtx:8554/webcam   -> webcam de esta PC (hay que tener corriendo webcam.bat)
+  #   rtsp://mediamtx:8554/demo     -> video de prueba con gente caminando
+  #   rtsp://usuario:clave@192.168.1.50:554/stream1   -> cámara IP de planta
+  # Se puede pisar sin editar este archivo:  $env:CAMERA_SOURCE="rtsp://..."; docker compose up -d
+  source: rtsp://mediamtx:8554/webcam
+  # Qué punto de la persona decide si está dentro de una zona:
+  #   torso  = el pecho (webcam de escritorio: no se ven los pies)
+  #   feet   = los pies (cámara en altura mirando el piso: lo más preciso en planta)
+  #   center = el centro de la caja
+  anchor: torso
+
+detector:
+  model: auto          # auto = yolo26s con GPU, yolo26n con CPU (o la ruta a un .pt)
+  confidence: 0.4
+  image_size: 640
+  track_buffer: 60     # frames que el tracker recuerda a alguien que dejó de ver
+
+occupancy:
+  enter_debounce_s: 0.5   # tiempo que tiene que estar dentro para contar como entrada
+  exit_grace_s: 3.0       # tiempo sin verlo dentro antes de dar la salida (tolera parpadeos del detector)
+
+stream:
+  max_width: 960       # ancho del video que se manda al navegador
+  fps: 15
+  jpeg_quality: 75
