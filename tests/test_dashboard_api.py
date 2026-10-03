@@ -59,6 +59,26 @@ def test_explicit_range_before_the_data_is_empty(client):
     "params",
     [{"from": 200, "to": 100}, {"from": 0, "to": 32 * 24 * 3600}],
 )
-def test_invalid_ranges(client, params):
+@pytest.mark.parametrize("endpoint", ["/api/dashboard", "/api/heatmap"])
+def test_invalid_ranges(client, params, endpoint):
     http, _ = client
-    assert http.get("/api/dashboard", params=params).status_code == 422
+    assert http.get(endpoint, params=params).status_code == 422
+
+
+def test_heatmap_counts_seconds_per_cell(client, tmp_path):
+    http, t0 = client
+    storage = http.app.state.storage
+    recorder = Recorder(storage.path, "cam1")
+    recorder.start()
+    for i in range(5):                                   # 5 s parado en el mismo lugar
+        recorder.positions(t0 + 100 + i, {7: (0.50, 0.50)})
+    recorder.positions(t0 + 105, {8: (1.0, 1.0)})        # borde: va a la última celda, no se sale
+    recorder.positions(t0 - 5000, {9: (0.1, 0.1)})       # fuera del rango pedido
+    recorder.stop()
+
+    data = http.get("/api/heatmap", params={"from": t0, "to": t0 + 600}).json()
+    assert (data["width"], data["height"]) == (64, 48)
+    assert data["grid"][24][32] == 5 and data["grid"][47][63] == 1
+    assert data["max_s"] == 5 and data["total_s"] == 6
+
+    assert storage.prune_positions(now=t0 + 31 * 86400) == 7  # todo tiene más de 30 días respecto de ese "ahora"

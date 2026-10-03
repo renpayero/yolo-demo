@@ -87,6 +87,10 @@ def draw_label(
 
 
 ZONE_FILL_ALPHA = 0.22
+POSTURE_SHORT = {"arms_raised": "brazos arriba", "trunk_flexion": "tronco flexionado", "fall": "en el piso"}
+# Líneas del esqueleto (índices COCO): hombros, brazos, torso y piernas.
+SKELETON = ((5, 6), (5, 7), (7, 9), (6, 8), (8, 10), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16))
+KEYPOINT_MIN_CONF = 0.5
 ALERT_COLOR: Color = (73, 81, 248)   # rojo (#f85149), el mismo de la web
 MAX_BANNER_ALERTS = 3
 
@@ -154,6 +158,7 @@ def draw_detections(
     track_zones: dict[int, list[tuple[Zone, float]]] | None = None,
     alert_track_ids: set[int] | None = None,
     names: dict[int, str] | None = None,
+    postures: dict[int, list[tuple[str, float]]] | None = None,
 ) -> None:
     """Caja e ID de cada persona (y su nombre, si está identificada); si está en zonas, cuáles y hace cuánto;
     y el punto que decide la zona. Quien tiene una alerta activa (permanencia, zona restringida) va en rojo.
@@ -169,6 +174,7 @@ def draw_detections(
         if names and det.track_id in names:
             parts.append(names[det.track_id])
         parts += [f"{zone.name} {format_duration(dwell)}" for zone, dwell in (track_zones or {}).get(det.track_id, [])]
+        parts += [f"⚠ {POSTURE_SHORT[kind]} {format_duration(held)}" for kind, held in (postures or {}).get(det.track_id, [])]
         text = " · ".join(parts)
         label_h = _label_patch(text, 14, BLACK, color, 230, True).shape[0]
         y = y1 - label_h if y1 - label_h >= 0 else y1  # arriba de la caja si entra; si no, adentro
@@ -179,6 +185,21 @@ def draw_detections(
             center = (round(ax * w), round(ay * h))
             cv2.circle(frame, center, 6, BLACK, -1, cv2.LINE_AA)
             cv2.circle(frame, center, 4, color, -1, cv2.LINE_AA)
+
+
+def draw_skeletons(frame: np.ndarray, detections: list[Detection], scale: float) -> None:
+    """Esqueleto fino de cada persona con pose (lo que usa el análisis de posturas)."""
+    for det in detections:
+        if not det.keypoints:
+            continue
+        color = track_color(det.track_id)
+        pts = [(round(x * scale), round(y * scale), c) for x, y, c in det.keypoints]
+        for a, b in SKELETON:
+            if pts[a][2] >= KEYPOINT_MIN_CONF and pts[b][2] >= KEYPOINT_MIN_CONF:
+                cv2.line(frame, pts[a][:2], pts[b][:2], color, 2, cv2.LINE_AA)
+        for x, y, c in pts[5:]:
+            if c >= KEYPOINT_MIN_CONF:
+                cv2.circle(frame, (x, y), 3, color, -1, cv2.LINE_AA)
 
 
 def draw_status_bar(frame: np.ndarray, text: str) -> None:

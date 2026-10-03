@@ -197,6 +197,25 @@
           </details>
         </section>
 
+        <section class="card chart-card" aria-labelledby="heatmap-title">
+          <h2 id="heatmap-title">Mapa de calor de permanencia</h2>
+          <p class="chart-sub">Dónde estuvo la gente y cuánto tiempo, sobre la imagen actual de la cámara.</p>
+          <div class="heatmap-wrap">
+            <div class="chart heatmap" id="heatmap-chart"></div>
+            <div class="heat-legend" aria-hidden="true">
+              <span>menos tiempo</span><span class="heat-ramp"></span><span>más tiempo</span>
+              <span class="heat-max" id="heatmap-max"></span>
+            </div>
+          </div>
+          <details class="table-twin">
+            <summary>Ver como tabla</summary>
+            <div class="table-wrap"><table class="data-table" id="heatmap-table">
+              <thead><tr><th scope="col">Lugar del cuadro (horizontal · vertical)</th><th scope="col" class="num">Permanencia</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </details>
+        </section>
+
         <section class="card" aria-labelledby="persons-table-title" id="persons-table-card">
           <h2 id="persons-table-title">Por persona</h2>
           <div class="table-wrap">

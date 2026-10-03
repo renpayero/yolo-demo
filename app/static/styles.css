@@ -415,6 +415,15 @@ main { padding: var(--space-4); min-height: 0; }
 .scroll-table { max-height: 420px; overflow-y: auto; }
 .scroll-table thead th, .table-twin thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
 
+.heatmap-wrap { display: flex; flex-direction: column; gap: var(--space-2); max-width: 960px; }
+.heatmap canvas { display: block; border-radius: var(--radius); }
+.heat-legend { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); font-size: 12px; }
+.heat-ramp {
+  width: 120px; height: 8px; border-radius: 4px;
+  background: linear-gradient(to right, rgba(217, 89, 38, 0.3), rgba(217, 89, 38, 0.9));
+}
+.heat-max { margin-left: auto; color: var(--text); }
+
 .table-twin { margin-top: var(--space-3); }
 .table-twin summary { cursor: pointer; color: var(--text-muted); font-size: 13px; }
 .table-twin .table-wrap { max-height: 280px; overflow-y: auto; margin-top: var(--space-2); }

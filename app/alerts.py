@@ -9,7 +9,8 @@ Reglas (configurables por zona):
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+import itertools
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -24,9 +25,9 @@ AlertKey = tuple[str, int, int]   # (tipo, zona, visita) — en "empty" la visit
 @dataclass(frozen=True)
 class Alert:
     uid: int
-    kind: AlertKind
-    zone_id: int
-    zone_name: str
+    kind: str                       # AlertKind o, para posturas, "arms_raised" | "trunk_flexion" | "fall"
+    zone_id: int | None             # las de postura pueden no estar en ninguna zona
+    zone_name: str | None
     ts: float
     message: str
     track_id: int | None = None
@@ -42,9 +43,11 @@ class AlertChange:
 
 
 class AlertEngine:
-    def __init__(self) -> None:
+    def __init__(self, next_uid: Callable[[], int] | None = None) -> None:
         self._active: dict[AlertKey, Alert] = {}
-        self._next_uid = 1
+        counter = itertools.count(1)
+        # Numeración compartida con las alertas de postura: el registro las identifica por este número.
+        self._next_uid = next_uid or (lambda: next(counter))
         self._names: Mapping[int, str] = {}
 
     def _who(self, track_id: int) -> str:
@@ -134,9 +137,8 @@ class AlertEngine:
     ) -> list[AlertChange]:
         if key in self._active:
             return []
-        alert = Alert(uid=self._next_uid, kind=kind, zone_id=zone.id, zone_name=zone.name, ts=ts, message=message,
+        alert = Alert(uid=self._next_uid(), kind=kind, zone_id=zone.id, zone_name=zone.name, ts=ts, message=message,
                       **extra)  # type: ignore[arg-type]
-        self._next_uid += 1
         self._active[key] = alert
         return [AlertChange("raise", alert, ts)]
 

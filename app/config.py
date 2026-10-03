@@ -55,6 +55,15 @@ class IdentificationConfig:
 
 
 @dataclass(frozen=True)
+class PostureConfig:
+    enabled: bool = True            # usa un segundo modelo (pose); en CPU conviene apagarlo
+    arms_raised_s: float = 5.0      # brazos sobre los hombros sostenidos más que esto → alerta
+    trunk_flexion_deg: float = 45.0 # tronco inclinado al menos esto respecto de la vertical...
+    trunk_flexion_s: float = 5.0    # ...sostenido más que esto → alerta
+    fall_s: float = 2.0             # persona en el piso más que esto → alerta de posible caída
+
+
+@dataclass(frozen=True)
 class StreamConfig:
     max_width: int = 960
     fps: int = 15
@@ -67,6 +76,7 @@ class AppConfig:
     detector: DetectorConfig = field(default_factory=DetectorConfig)
     occupancy: OccupancyConfig = field(default_factory=OccupancyConfig)
     identification: IdentificationConfig = field(default_factory=IdentificationConfig)
+    posture: PostureConfig = field(default_factory=PostureConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
 
 
@@ -93,5 +103,6 @@ def load_config(path: Path) -> AppConfig:
         detector=_section(DetectorConfig, raw, "detector"),
         occupancy=_section(OccupancyConfig, raw, "occupancy"),
         identification=_section(IdentificationConfig, raw, "identification"),
+        posture=_section(PostureConfig, raw, "posture"),
         stream=_section(StreamConfig, raw, "stream"),
     )

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from app.capture import FrameSource
-from app.config import AppConfig, IdentificationConfig
+from app.config import AppConfig, IdentificationConfig, PostureConfig
 from app.domain import Detection
 from app.faces import Face, Recognizer
 from app.pipeline import Pipeline
@@ -228,6 +228,66 @@ def test_track_handover_splits_the_visit_between_people(video_file, storage):
     con.close()
     assert [v[0] for v in visits] == [ana.id, beto.id]
     assert visits[0][2] <= visits[1][1]       # la de Ana termina antes de que empiece la de Beto
+
+
+def arms_up_pose():
+    """Pose falsa sobre la caja de FakeDetector: de pie, con la muñeca izquierda sobre la cabeza."""
+    points = [(0.0, 0.0, 0.0)] * 17
+    points[5], points[6] = (15.0, 15.0, 0.9), (30.0, 15.0, 0.9)     # hombros
+    points[11], points[12] = (17.0, 30.0, 0.9), (28.0, 30.0, 0.9)   # caderas
+    points[9], points[10] = (14.0, 5.0, 0.9), (31.0, 25.0, 0.9)     # muñecas: izquierda arriba
+    return [((5.0, 5.0, 40.0, 40.0), tuple(points))]
+
+
+class FakePose:
+    def __init__(self, device):
+        self.device = device
+
+    def estimate(self, image):
+        return arms_up_pose()
+
+
+def test_posture_alert_and_heatmap_positions(video_file, storage):
+    cfg = AppConfig(posture=PostureConfig(arms_raised_s=0.5))
+    recorder = Recorder(storage.path, "cam1")
+    source = FrameSource(str(video_file))
+    pipeline = Pipeline(cfg, source, FakeDetector, storage, recorder, pose_factory=FakePose)
+    recorder.start()
+    source.start()
+    pipeline.start()
+    try:
+        assert wait_until(lambda: any(a["kind"] == "arms_raised" for a in pipeline.state["alerts"]["active"]))
+        assert pipeline.state["posture"] == {"enabled": True}
+        time.sleep(1.2)  # al menos dos muestras de posición
+    finally:
+        pipeline.stop()
+        recorder.stop()
+        source.stop()
+
+    con = sqlite3.connect(storage.path)
+    kinds = con.execute("SELECT kind, resolved_ts IS NOT NULL FROM alerts").fetchall()
+    positions = con.execute("SELECT track_id, x, y FROM positions").fetchall()
+    con.close()
+    assert kinds == [("arms_raised", 1)]               # registrada y resuelta al apagar
+    assert len(positions) >= 2 and all(p[0] == 7 for p in positions)
+    grid = storage.heatmap("cam1", 0, time.time() + 1, 64, 48)
+    assert sum(map(sum, grid)) == len(positions)
+
+
+def test_pose_model_failure_keeps_the_demo_running(video_file, storage):
+    def broken_pose(device):
+        raise RuntimeError("sin pesos de pose")
+
+    source = FrameSource(str(video_file))
+    pipeline = Pipeline(AppConfig(), source, FakeDetector, storage, pose_factory=broken_pose)
+    source.start()
+    pipeline.start()
+    try:
+        assert wait_until(lambda: pipeline.state["phase"] == "running")
+        assert pipeline.state["posture"] == {"enabled": False}
+    finally:
+        pipeline.stop()
+        source.stop()
 
 
 def test_unexpected_error_does_not_stop_the_pipeline(video_file, storage, monkeypatch):

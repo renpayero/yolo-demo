@@ -95,7 +95,20 @@ MIGRATIONS: tuple[str, ...] = (
     );
     CREATE INDEX face_embeddings_by_person ON face_embeddings (person_id);
     """,
+    # 4: posiciones (una por persona y por segundo) para el mapa de calor de permanencia.
+    """
+    CREATE TABLE positions (
+        camera_id  TEXT NOT NULL,
+        ts         REAL NOT NULL,
+        track_id   INTEGER NOT NULL,
+        x          REAL NOT NULL,     -- punto de referencia normalizado 0-1
+        y          REAL NOT NULL
+    );
+    CREATE INDEX positions_by_time ON positions (camera_id, ts);
+    """,
 )
+
+POSITIONS_RETENTION_DAYS = 30
 
 EMBEDDING_DIM = 128
 
@@ -311,6 +324,25 @@ class Storage:
                 )
             ]
         return sessions, visits, alerts
+
+    def heatmap(self, camera_id: str, lo: float, hi: float, width: int, height: int) -> list[list[int]]:
+        """Segundos-persona en cada celda de una grilla `width × height` sobre la imagen (1 posición = 1 s)."""
+        grid = [[0] * width for _ in range(height)]
+        with self._tx() as con:
+            rows = con.execute(
+                "SELECT MIN(CAST(x * ? AS INTEGER), ?) AS cx, MIN(CAST(y * ? AS INTEGER), ?) AS cy, COUNT(*) AS n"
+                " FROM positions WHERE camera_id = ? AND ts >= ? AND ts < ? GROUP BY cx, cy",
+                (width, width - 1, height, height - 1, camera_id, lo, hi),
+            ).fetchall()
+        for r in rows:
+            if 0 <= r["cx"] < width and 0 <= r["cy"] < height:
+                grid[r["cy"]][r["cx"]] = r["n"]
+        return grid
+
+    def prune_positions(self, now: float, days: int = POSITIONS_RETENTION_DAYS) -> int:
+        """Las posiciones solo sirven para el mapa de calor: se guardan un tiempo y se borran."""
+        with self._tx() as con:
+            return con.execute("DELETE FROM positions WHERE ts < ?", (now - days * 86400,)).rowcount
 
     # ---------- Recuperación tras un corte ----------
 

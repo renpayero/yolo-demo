@@ -14,7 +14,7 @@ import numpy as np
 import yaml
 
 from app.config import DetectorConfig
-from app.domain import Detection
+from app.domain import BBox, Detection, Keypoint
 
 log = logging.getLogger(__name__)
 
@@ -100,3 +100,36 @@ class UltralyticsPersonDetector:
         predictor = getattr(self._model, "predictor", None)
         for tracker in getattr(predictor, "trackers", None) or []:
             tracker.reset()
+
+
+class PoseEstimator(Protocol):
+    def estimate(self, image: np.ndarray) -> list[tuple[BBox, tuple[Keypoint, ...]]]: ...
+
+
+class UltralyticsPoseEstimator:
+    """YOLO pose: los 17 puntos del cuerpo de cada persona (para ergonomía y caídas). No hace tracking:
+    las poses se asocian a las personas seguidas por superposición (`posture.attach_keypoints`)."""
+
+    def __init__(self, device: str, confidence: float = 0.35) -> None:
+        from ultralytics import YOLO
+
+        self.device = device
+        weights = MODELS_DIR / ("yolo26s-pose.pt" if device.startswith("cuda") else "yolo26n-pose.pt")
+        self.model_name = weights.stem
+        self._confidence = confidence
+        self._model = YOLO(str(weights), task="pose")
+        log.info("Modelo de pose %s en %s", self.model_name, device)
+
+    def estimate(self, image: np.ndarray) -> list[tuple[BBox, tuple[Keypoint, ...]]]:
+        result = self._model.predict(image, conf=self._confidence, device=self.device, verbose=False)[0]
+        if result.boxes is None or result.keypoints is None or len(result.boxes) == 0:
+            return []
+        boxes = result.boxes.xyxy.cpu().numpy()
+        points = result.keypoints.data.cpu().numpy()
+        return [
+            (
+                (float(b[0]), float(b[1]), float(b[2]), float(b[3])),
+                tuple((float(x), float(y), float(c)) for x, y, c in kp),
+            )
+            for b, kp in zip(boxes, points)
+        ]

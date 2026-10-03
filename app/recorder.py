@@ -87,6 +87,17 @@ class Recorder:
             elif event.kind == "exit":
                 self._queue.put(self._visit_close_op(event))
 
+    def positions(self, ts: float, points: Mapping[int, tuple[float, float]]) -> None:
+        """Dónde está cada persona (el pipeline lo manda una vez por segundo): alimenta el mapa de calor."""
+        rows = [(self._camera_id, ts, track_id, x, y) for track_id, (x, y) in points.items()]
+        if not rows:
+            return
+
+        def op(con: sqlite3.Connection) -> None:
+            con.executemany("INSERT INTO positions (camera_id, ts, track_id, x, y) VALUES (?, ?, ?, ?, ?)", rows)
+
+        self._queue.put(op)
+
     def visit_person(self, visit_id: int, person_id: int) -> None:
         """La persona se identificó con la visita ya abierta: se le asigna desde el comienzo."""
         def op(con: sqlite3.Connection) -> None:

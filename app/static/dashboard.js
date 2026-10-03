@@ -3,11 +3,28 @@
 
 import { clock, createCrosshairSync, renderHeadcount, renderTimeline } from './charts.js';
 import { formatDuration, humanDuration } from './format.js';
+import { heatmapRows, renderHeatmap } from './heatmap.js';
 
 const REFRESH_MS = 5000;
 const MAX_TABLE_ROWS = 200;
 const $ = (id) => document.getElementById(id);
-const ALERT_KIND = { dwell: 'Permanencia', empty: 'Estación vacía', restricted: 'Zona restringida' };
+const ALERT_KIND = {
+  dwell: 'Permanencia',
+  empty: 'Estación vacía',
+  restricted: 'Zona restringida',
+  arms_raised: 'Brazos elevados',
+  trunk_flexion: 'Tronco flexionado',
+  fall: 'Posible caída',
+};
+
+function loadImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);  // sin video: el mapa se dibuja sobre fondo liso
+    img.src = url;
+  });
+}
 
 const dateTime = (ts) =>
   new Date(ts * 1000).toLocaleString('es-AR', {
@@ -160,6 +177,18 @@ export function createDashboard() {
   let timer = null;
   let inflight = false;
   let lastData = null;
+  let lastHeat = null;
+  let background = null;   // imagen de la cámara bajo el mapa de calor (se renueva al cambiar el rango)
+
+  function renderHeat(heat) {
+    renderHeatmap($('heatmap-chart'), heat, background);
+    $('heatmap-max').textContent = heat.max_s ? `máx. ${formatDuration(heat.max_s)} en un punto` : 'sin datos en este período';
+    fillTable('heatmap-table', heatmapRows(heat).map(([where, time]) => {
+      const tr = document.createElement('tr');
+      tr.append(cell(where), cell(time, 'num'));
+      return tr;
+    }));
+  }
 
   function currentRange() {
     const now = Date.now() / 1000;
@@ -197,11 +226,21 @@ export function createDashboard() {
     const range = currentRange();
     if (userInitiated) $('metrics-body').classList.add('loading');
     try {
-      const res = await fetch(`/api/dashboard?from=${range.from}&to=${range.to}`);
+      const query = `from=${range.from}&to=${range.to}`;
+      const [res, heatRes, image] = await Promise.all([
+        fetch(`/api/dashboard?${query}`),
+        fetch(`/api/heatmap?${query}`),
+        userInitiated || !background ? loadImage(`/api/snapshot.jpg?t=${Date.now()}`) : Promise.resolve(background),
+      ]);
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `Error ${res.status}`);
+      background = image ?? background;
       lastData = data;
       render(data);
+      if (heatRes.ok) {
+        lastHeat = await heatRes.json();
+        renderHeat(lastHeat);
+      }
       $('range-status').textContent = range.live
         ? `Actualizado ${clock(Date.now() / 1000, true)} · se actualiza cada ${REFRESH_MS / 1000} s`
         : `Del ${dateTime(range.from)} al ${dateTime(range.to)}`;
@@ -252,7 +291,11 @@ export function createDashboard() {
   let resizeFrame = 0;
   new ResizeObserver(() => {
     cancelAnimationFrame(resizeFrame);
-    resizeFrame = requestAnimationFrame(() => active && lastData && renderCharts(lastData));
+    resizeFrame = requestAnimationFrame(() => {
+      if (!active) return;
+      if (lastData) renderCharts(lastData);
+      if (lastHeat) renderHeat(lastHeat);
+    });
   }).observe($('timeline-chart'));
 
   return {

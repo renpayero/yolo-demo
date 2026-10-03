@@ -58,7 +58,14 @@ export function createLivePanel() {
   };
 }
 
-const ALERT_KIND = { dwell: 'Permanencia', empty: 'Estación vacía', restricted: 'Zona restringida' };
+const ALERT_KIND = {
+  dwell: 'Permanencia',
+  empty: 'Estación vacía',
+  restricted: 'Zona restringida',
+  arms_raised: 'Brazos elevados',
+  trunk_flexion: 'Tronco flexionado',
+  fall: 'Posible caída',
+};
 const clock = (ts) => new Date(ts * 1000).toLocaleTimeString('es-AR', { hour12: false });
 
 function alertItem(alert) {

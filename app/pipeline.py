@@ -7,6 +7,7 @@ en `Recorder`, que escribe en SQLite desde otro hilo sin frenar el video.
 """
 from __future__ import annotations
 
+import itertools
 import logging
 import queue
 import threading
@@ -23,7 +24,7 @@ import numpy as np
 from app.alerts import Alert, AlertChange, AlertEngine
 from app.capture import Frame, FrameSource
 from app.config import AppConfig
-from app.detector import PersonDetector
+from app.detector import PersonDetector, PoseEstimator
 from app.domain import Detection
 from app.faces import ENROLL_TIMEOUT_S, EnrollmentError, IdentityChange, Recognizer
 from app.occupancy import OccupancyEngine, ZoneEvent, ZoneStatus
@@ -31,11 +32,13 @@ from app.overlay import (
     draw_alert_banner,
     draw_detections,
     draw_identification_badge,
+    draw_skeletons,
     draw_status_bar,
     draw_zones,
     placeholder_frame,
     resize_for_stream,
 )
+from app.posture import PostureMonitor, attach_keypoints, read_posture
 from app.recorder import Recorder
 from app.storage import Storage
 from app.zones import Point, anchor_point
@@ -46,6 +49,10 @@ NO_SIGNAL_AFTER_S = 1.5        # sin frames durante este tiempo se muestra "sin 
 PLACEHOLDER_INTERVAL_S = 0.5
 ERROR_LOG_INTERVAL_S = 10.0
 HEARTBEAT_S = 5.0              # cada cuánto se marca en la base que el sistema sigue mirando (pérdida máx. ante un corte)
+POSITION_EVERY_S = 1.0         # muestreo de posiciones para el mapa de calor (cada muestra = 1 s de permanencia)
+# La pose (posturas) corre cada 2 frames: detección + pose en cada frame no llega a 30 fps a 720p en una 3060 Ti
+# (~36 ms) y las posturas se evalúan en segundos; entre medio se reusa la última pose asociándola por superposición.
+POSE_EVERY_N_FRAMES = 2
 RECENT_ALERTS = 10
 
 
@@ -91,6 +98,8 @@ class _LoopState:
     last_placeholder_at: float = 0.0
     next_encode_at: float = 0.0
     next_heartbeat_at: float = 0.0
+    next_position_ts: float = 0.0
+    frames: int = 0
 
 
 def _alert_dict(alert: Alert, resolved_ts: float | None = None) -> dict[str, Any]:
@@ -115,6 +124,7 @@ class Pipeline:
         storage: Storage,
         recorder: Recorder | None = None,
         recognizer: Recognizer | None = None,
+        pose_factory: Callable[[str], PoseEstimator] | None = None,   # recibe el dispositivo (cuda/cpu)
     ) -> None:
         self._cfg = cfg
         self._source = source
@@ -139,7 +149,12 @@ class Pipeline:
             exit_grace_s=cfg.occupancy.exit_grace_s,
             start_ts=time.time(),
         )
-        self._alerts = AlertEngine()
+        alert_ids = itertools.count(1)   # una sola numeración: el registro identifica cada alerta por su número
+        self._alerts = AlertEngine(next_uid=lambda: next(alert_ids))
+        self._posture = PostureMonitor(cfg.posture, next_uid=lambda: next(alert_ids))
+        self._pose_factory = pose_factory if cfg.posture.enabled else None
+        self._pose: PoseEstimator | None = None
+        self._last_poses: list = []
         self._recent_alerts: deque[dict[str, Any]] = deque(maxlen=RECENT_ALERTS)
         self._monitoring_since: float | None = None   # desde cuándo hay video sin cortes
         self._fps = FpsMeter()
@@ -217,6 +232,11 @@ class Pipeline:
             self._state = self._build_state(phase="error", people=0, error=str(exc))
             self._publish_placeholder("No se pudo cargar el modelo", str(exc)[:120])
             return
+        if self._pose_factory:
+            try:
+                self._pose = self._pose_factory(self._detector.device)
+            except Exception:  # sin pose la demo sigue: solo se pierden las alertas de postura
+                log.exception("No se pudo cargar el modelo de pose; sigue sin análisis de posturas")
 
         loop = _LoopState(last_frame_at=time.monotonic())
         while not self._stop.is_set():
@@ -245,6 +265,11 @@ class Pipeline:
 
         try:
             detections = self._detector.track(frame.image)
+            if self._pose:
+                loop.frames += 1
+                if loop.frames % POSE_EVERY_N_FRAMES == 1 or POSE_EVERY_N_FRAMES == 1:
+                    self._last_poses = self._pose.estimate(frame.image)
+                detections = attach_keypoints(detections, self._last_poses)
         except Exception:
             self._log_error_throttled("Falló la detección en un frame")
             return
@@ -256,6 +281,11 @@ class Pipeline:
             for change in self._recognizer.identify(frame.image, detections, frame.ts):
                 self._on_identity_change(change, frame.ts)
         self._recognizer.step_enrollment(frame.image, now)
+        if self._pose:
+            self._update_posture(frame.ts, detections)
+        if self._recorder and frame.ts >= loop.next_position_ts:  # una posición por persona y por segundo
+            loop.next_position_ts = frame.ts + POSITION_EVERY_S
+            self._recorder.positions(frame.ts, anchors)
         statuses = self._engine.snapshot()
 
         if now >= loop.next_encode_at:
@@ -277,8 +307,17 @@ class Pipeline:
     def _shutdown(self) -> None:
         ts = time.time()
         self._process_events(ts, self._engine.close_all())
-        self._handle_alert_changes(self._alerts.resolve_all(ts))
+        self._handle_alert_changes(self._alerts.resolve_all(ts) + self._posture.resolve_all(ts))
         self._end_monitoring(ts)
+
+    def _update_posture(self, ts: float, detections: list[Detection]) -> None:
+        readings = {d.track_id: read_posture(d.keypoints, d.bbox) for d in detections if d.keypoints}
+        zones = {tid: (zs[0][0].id, zs[0][0].name) for tid, zs in self._engine.track_zones().items() if zs}
+        changes = self._posture.update(ts, readings, zones, self._track_names())
+        self._handle_alert_changes(changes, self._recognizer.assignments())
+
+    def _active_alerts(self) -> list[Alert]:
+        return sorted(self._alerts.active + self._posture.active, key=lambda a: a.ts)
 
     def _anchors(self, detections: list[Detection], frame: Frame) -> dict[int, Point]:
         h, w = frame.image.shape[:2]
@@ -385,13 +424,16 @@ class Pipeline:
         anchors: dict[int, Point],
         statuses: list[ZoneStatus],
     ) -> None:
-        active = self._alerts.active
+        active = self._active_alerts()
         view, scale = resize_for_stream(frame.image, self._cfg.stream.max_width)
-        draw_zones(view, statuses, frame.ts, {a.zone_id for a in active})
+        draw_zones(view, statuses, frame.ts, {a.zone_id for a in self._alerts.active})
+        if self._pose:
+            draw_skeletons(view, detections, scale)
         draw_detections(
             view, detections, scale, anchors, self._engine.track_zones(),
             {a.track_id for a in active if a.track_id is not None},
             self._track_names(),
+            self._posture.ongoing(frame.ts),
         )
         draw_status_bar(view, f"{self._fps.fps:4.1f} fps · {self._detector.device} · {self._detector.model_name}")
         if self._identification:
@@ -455,9 +497,10 @@ class Pipeline:
                 for s in statuses
             ],
             "alerts": {
-                "active": [_alert_dict(a) for a in self._alerts.active],
+                "active": [_alert_dict(a) for a in self._active_alerts()],
                 "recent": list(self._recent_alerts),
             },
+            "posture": {"enabled": self._pose is not None},
             "identification": {
                 "enabled": self._identification,
                 "persons": len(self._person_names),

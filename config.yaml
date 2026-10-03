@@ -32,6 +32,14 @@ identification:
   match_threshold: 0.45 # similitud mínima para reconocer (subir si confunde personas, bajar si no reconoce)
   min_margin: 0.08      # ventaja mínima sobre la segunda persona más parecida
 
+posture:
+  # Ergonomía y caídas con un segundo modelo (pose). En una PC sin GPU conviene apagarlo (enabled: false).
+  enabled: true
+  arms_raised_s: 5        # brazos sobre los hombros sostenidos más que esto → alerta
+  trunk_flexion_deg: 45   # tronco inclinado al menos estos grados...
+  trunk_flexion_s: 5      # ...durante más que esto → alerta
+  fall_s: 2               # persona en el piso más que esto → alerta de posible caída
+
 stream:
   max_width: 960       # ancho del video que se manda al navegador
   fps: 15

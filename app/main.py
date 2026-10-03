@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import signal
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,12 +18,12 @@ from fastapi.staticfiles import StaticFiles
 from app.capture import FrameSource
 from app.config import load_config
 from app.dashboard_api import router as dashboard_router
-from app.detector import UltralyticsPersonDetector
+from app.detector import UltralyticsPersonDetector, UltralyticsPoseEstimator
 from app.overlay import resize_for_stream
 from app.persons_api import router as persons_router
 from app.pipeline import FrameHub, Pipeline
 from app.recorder import Recorder
-from app.storage import Storage
+from app.storage import POSITIONS_RETENTION_DAYS, Storage
 from app.zones_api import router as zones_router
 
 CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "/srv/config.yaml"))
@@ -67,7 +68,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     recorder = Recorder(storage.path, cfg.camera.id)
     source = FrameSource(cfg.camera.source)
-    pipeline = Pipeline(cfg, source, lambda: UltralyticsPersonDetector(cfg.detector), storage, recorder)
+    pruned = storage.prune_positions(time.time())
+    if pruned:
+        log.info("Se borraron %d posiciones de más de %d días (mapa de calor)", pruned, POSITIONS_RETENTION_DAYS)
+    pipeline = Pipeline(
+        cfg, source, lambda: UltralyticsPersonDetector(cfg.detector), storage, recorder,
+        pose_factory=UltralyticsPoseEstimator,
+    )
     recorder.start()
     source.start()
     pipeline.start()
@@ -81,6 +88,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Visión en planta — demo", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    """Que el navegador consulte si cambió la interfaz (304 si no): tras actualizar la app no queda una versión vieja."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 app.include_router(zones_router)
 app.include_router(dashboard_router)
 app.include_router(persons_router)
