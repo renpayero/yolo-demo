@@ -13,3 +13,4 @@ __pycache__/
 
 # Material de presentación con imágenes de terceros (videos/fotos de ejemplo de OpenCV)
 docs/viabilidad_reconocimiento_facial.html
+app/static/_viabilidad.html
