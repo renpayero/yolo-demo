@@ -11,7 +11,7 @@
   <header class="topbar">
     <h1 class="brand">Visión en planta <span class="tag">demo</span></h1>
     <nav class="tabs" role="tablist" aria-label="Secciones">
-      <button class="tab" role="tab" id="tab-live" data-panel="panel-live" aria-controls="panel-live" aria-selected="true">En vivo</button>
+      <button class="tab" role="tab" id="tab-live" data-panel="panel-live" aria-controls="panel-live" aria-selected="true">En vivo <span class="tab-badge" id="alert-badge" hidden></span></button>
       <button class="tab" role="tab" id="tab-zones" data-panel="panel-zones" aria-controls="panel-zones" aria-selected="false">Zonas</button>
     </nav>
     <p class="pill" id="conn-pill" role="status" data-level="idle"><span class="dot" aria-hidden="true"></span><span class="pill-text">Conectando…</span></p>
@@ -27,6 +27,14 @@
         <section class="card" aria-labelledby="people-title">
           <h2 id="people-title">Personas en cuadro</h2>
           <p class="big-number" id="st-people">—</p>
+        </section>
+
+        <section class="card alerts-card" id="alerts-card" aria-labelledby="alerts-title" data-active="false">
+          <h2 id="alerts-title">Alertas</h2>
+          <ul class="alert-list" id="alerts-active" aria-live="polite"></ul>
+          <p class="empty" id="alerts-empty">Sin alertas activas.</p>
+          <h3 class="subhead" id="alerts-recent-title" hidden>Resueltas hace poco</h3>
+          <ul class="alert-list recent" id="alerts-recent"></ul>
         </section>
 
         <section class="card" aria-labelledby="live-zones-title">
@@ -80,6 +88,21 @@
               <label class="radio"><input type="radio" name="zone-kind" value="work" checked> Estación de trabajo</label>
               <label class="radio"><input type="radio" name="zone-kind" value="restricted"> Zona restringida</label>
             </fieldset>
+            <fieldset class="field" id="zone-thresholds">
+              <legend>Alertas</legend>
+              <label class="inline-field">
+                <span>Si alguien se queda más de</span>
+                <input type="number" id="zone-max-dwell" min="1" max="86400" step="1" inputmode="numeric">
+                <span>s</span>
+              </label>
+              <label class="inline-field">
+                <span>Si queda vacía más de</span>
+                <input type="number" id="zone-max-empty" min="1" max="86400" step="1" inputmode="numeric">
+                <span>s</span>
+              </label>
+              <p class="field-help">Dejá el campo vacío para no avisar.</p>
+            </fieldset>
+            <p class="field-help" id="zone-restricted-help" hidden>Cualquier ingreso a esta zona genera una alerta.</p>
             <p class="form-error" id="zone-error" role="alert"></p>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="zone-save">Guardar</button>

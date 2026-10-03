@@ -53,8 +53,32 @@ export function createLivePanel() {
       $('st-model').textContent = state.model ?? '—';
       $('st-reconnects').textContent = cam.reconnects;
       renderZones(state.zones);
+      renderAlerts(state.alerts);
     },
   };
+}
+
+const ALERT_KIND = { dwell: 'Permanencia', empty: 'Estación vacía', restricted: 'Zona restringida' };
+const clock = (ts) => new Date(ts * 1000).toLocaleTimeString('es-AR', { hour12: false });
+
+function alertItem(alert) {
+  const item = document.createElement('li');
+  item.className = 'alert-item';
+  item.innerHTML = '<span class="alert-kind"></span><span class="alert-time"></span><span class="alert-message"></span>';
+  item.querySelector('.alert-kind').textContent = ALERT_KIND[alert.kind] ?? alert.kind;
+  item.querySelector('.alert-time').textContent = alert.resolved_ts
+    ? `${clock(alert.ts)} – ${clock(alert.resolved_ts)}`
+    : `desde ${clock(alert.ts)}`;
+  item.querySelector('.alert-message').textContent = alert.message;
+  return item;
+}
+
+function renderAlerts({ active, recent }) {
+  $('alerts-card').dataset.active = String(active.length > 0);
+  $('alerts-empty').hidden = active.length > 0;
+  $('alerts-active').replaceChildren(...active.slice().reverse().map(alertItem));
+  $('alerts-recent-title').hidden = recent.length === 0;
+  $('alerts-recent').replaceChildren(...recent.slice(0, 5).map(alertItem));
 }
 
 function renderZones(zones) {

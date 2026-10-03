@@ -8,15 +8,31 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.storage import Storage, ZoneNameTaken
-from app.zones import Zone
+from app.zones import Zone, ZoneSpec
 
 router = APIRouter(prefix="/api/zones", tags=["zonas"])
+
+
+Seconds = Annotated[float, Field(ge=1, le=86400)]
 
 
 class ZoneIn(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=40)]
     kind: Literal["work", "restricted"] = "work"
     polygon: Annotated[list[tuple[float, float]], Field(min_length=3, max_length=64)]
+    max_dwell_s: Seconds | None = None
+    max_empty_s: Seconds | None = None
+
+    def to_spec(self) -> ZoneSpec:
+        # En una restringida cualquier ingreso ya es alerta: los umbrales no aplican.
+        work = self.kind == "work"
+        return ZoneSpec(
+            name=self.name,
+            kind=self.kind,
+            polygon=tuple((x, y) for x, y in self.polygon),
+            max_dwell_s=self.max_dwell_s if work else None,
+            max_empty_s=self.max_empty_s if work else None,
+        )
 
     @field_validator("name")
     @classmethod
@@ -40,10 +56,15 @@ class ZoneOut(BaseModel):
     kind: str
     polygon: list[tuple[float, float]]
     color: str
+    max_dwell_s: float | None
+    max_empty_s: float | None
 
     @classmethod
     def of(cls, zone: Zone) -> ZoneOut:
-        return cls(id=zone.id, name=zone.name, kind=zone.kind, polygon=list(zone.polygon), color=zone.color)
+        return cls(
+            id=zone.id, name=zone.name, kind=zone.kind, polygon=list(zone.polygon), color=zone.color,
+            max_dwell_s=zone.max_dwell_s, max_empty_s=zone.max_empty_s,
+        )
 
 
 class ZonesFile(BaseModel):
@@ -76,7 +97,7 @@ def list_zones(request: Request) -> list[ZoneOut]:
 @router.post("", status_code=201)
 def create_zone(body: ZoneIn, request: Request) -> ZoneOut:
     try:
-        zone = _storage(request).create_zone(_camera_id(request), body.name, body.kind, body.polygon)
+        zone = _storage(request).create_zone(_camera_id(request), body.to_spec())
     except ZoneNameTaken:
         raise _name_taken(body.name) from None
     _zones_changed(request)
@@ -86,7 +107,7 @@ def create_zone(body: ZoneIn, request: Request) -> ZoneOut:
 @router.put("/{zone_id}")
 def update_zone(zone_id: int, body: ZoneIn, request: Request) -> ZoneOut:
     try:
-        zone = _storage(request).update_zone(zone_id, body.name, body.kind, body.polygon)
+        zone = _storage(request).update_zone(zone_id, body.to_spec())
     except ZoneNameTaken:
         raise _name_taken(body.name) from None
     if zone is None:
@@ -109,7 +130,13 @@ def export_zones(request: Request) -> JSONResponse:
     zones = _storage(request).list_zones(camera_id)
     payload = ZonesFile(
         camera_id=camera_id,
-        zones=[ZoneIn(name=z.name, kind=z.kind, polygon=list(z.polygon)) for z in zones],  # type: ignore[arg-type]
+        zones=[
+            ZoneIn(
+                name=z.name, kind=z.kind, polygon=list(z.polygon),  # type: ignore[arg-type]
+                max_dwell_s=z.max_dwell_s, max_empty_s=z.max_empty_s,
+            )
+            for z in zones
+        ],
     )
     return JSONResponse(
         payload.model_dump(),
@@ -121,9 +148,7 @@ def export_zones(request: Request) -> JSONResponse:
 def import_zones(body: ZonesFile, request: Request) -> list[ZoneOut]:
     """Reemplaza todas las zonas de la cámara por las del archivo."""
     try:
-        zones = _storage(request).replace_zones(
-            _camera_id(request), [(z.name, z.kind, z.polygon) for z in body.zones]
-        )
+        zones = _storage(request).replace_zones(_camera_id(request), [z.to_spec() for z in body.zones])
     except ZoneNameTaken:
         raise HTTPException(status_code=409, detail="El archivo tiene zonas con nombres repetidos") from None
     _zones_changed(request)

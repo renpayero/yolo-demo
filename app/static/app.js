@@ -48,5 +48,11 @@ connectState({
     lastState = state;
     live.render(state);
     renderConnectionPill(pill, { serverConnected, state });
+    // Contador de alertas en la pestaña: se ve aunque estés editando zonas.
+    const count = state.alerts.active.length;
+    const badge = document.getElementById('alert-badge');
+    badge.hidden = count === 0;
+    badge.textContent = `⚠ ${count}`;
+    badge.title = `${count} alerta(s) activa(s)`;
   },
 });

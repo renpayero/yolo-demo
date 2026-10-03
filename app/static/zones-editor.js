@@ -203,11 +203,20 @@ export function createZonesEditor() {
     $('zone-list-empty').hidden = zones.length > 0;
   }
 
+  function syncKindFields() {
+    const restricted = form.elements['zone-kind'].value === 'restricted';
+    $('zone-thresholds').hidden = restricted;
+    $('zone-restricted-help').hidden = !restricted;
+  }
+
   function showForm(zone) {
     $('zone-form-card').hidden = false;
     $('zone-form-title').textContent = zone ? 'Editar zona' : 'Nueva zona';
     $('zone-name').value = zone?.name ?? '';
     form.elements['zone-kind'].value = zone?.kind ?? 'work';
+    $('zone-max-dwell').value = zone?.max_dwell_s ?? '';
+    $('zone-max-empty').value = zone?.max_empty_s ?? '';
+    syncKindFields();
     $('zone-delete').hidden = !zone;
     resetDeleteButton();
     $('zone-error').textContent = '';
@@ -269,10 +278,13 @@ export function createZonesEditor() {
 
   async function save(event) {
     event.preventDefault();
+    const seconds = (input) => (input.value.trim() === '' ? null : Number(input.value));
     const body = {
       name: $('zone-name').value,
       kind: form.elements['zone-kind'].value,
       polygon: editing.points,
+      max_dwell_s: seconds($('zone-max-dwell')),
+      max_empty_s: seconds($('zone-max-empty')),
     };
     try {
       if (editing.id) await api('PUT', `/api/zones/${editing.id}`, body);
@@ -421,6 +433,7 @@ export function createZonesEditor() {
   $('zone-cancel').addEventListener('click', cancel);
   $('zone-delete').addEventListener('click', remove);
   form.addEventListener('submit', save);
+  for (const radio of form.elements['zone-kind']) radio.addEventListener('change', syncKindFields);
   $('zone-import').addEventListener('change', (event) => {
     const [file] = event.target.files;
     if (file) importFile(file);

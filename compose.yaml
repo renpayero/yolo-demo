@@ -17,6 +17,8 @@ services:
     depends_on:
       - mediamtx
     gpus: all
+    # Tiempo para apagarse prolijo (cortar streams abiertos, cerrar visitas y sesión en la base) antes del SIGKILL.
+    stop_grace_period: 15s
     ports:
       # UI web: http://localhost:8000. Por defecto solo desde esta PC (el video muestra personas).
       # Para abrirla desde otra PC de la red:  $env:BIND_ADDR="0.0.0.0"; docker compose up -d

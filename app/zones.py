@@ -23,6 +23,8 @@ class Zone:
     name: str
     kind: str                       # "work" (estación de trabajo) | "restricted"
     polygon: tuple[Point, ...]
+    max_dwell_s: float | None = None   # alerta si alguien se queda más (solo zonas de trabajo)
+    max_empty_s: float | None = None   # alerta si la estación queda vacía más (solo zonas de trabajo)
 
     @property
     def color(self) -> str:
@@ -30,6 +32,16 @@ class Zone:
         if self.kind == "restricted":
             return RESTRICTED_COLOR
         return ZONE_PALETTE[(self.id - 1) % len(ZONE_PALETTE)]
+
+
+@dataclass(frozen=True)
+class ZoneSpec:
+    """Datos de una zona para crearla o editarla (todavía sin id)."""
+    name: str
+    kind: str
+    polygon: tuple[Point, ...]
+    max_dwell_s: float | None = None
+    max_empty_s: float | None = None
 
 
 def point_in_polygon(point: Point, polygon: tuple[Point, ...]) -> bool:

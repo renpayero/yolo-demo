@@ -68,11 +68,27 @@ def test_duplicate_name_and_missing_zone(ctx):
     assert client.delete("/api/zones/999").status_code == 404
 
 
+def test_alert_thresholds(ctx):
+    client, _ = ctx
+    r = client.post("/api/zones", json={"name": "Lijado", "polygon": TRIANGLE, "max_dwell_s": 30, "max_empty_s": 60})
+    assert (r.json()["max_dwell_s"], r.json()["max_empty_s"]) == (30, 60)
+
+    # En una restringida cualquier ingreso ya es alerta: los umbrales se descartan.
+    r = client.post("/api/zones", json={"name": "Prohibido", "kind": "restricted", "polygon": TRIANGLE,
+                                        "max_dwell_s": 30, "max_empty_s": 60})
+    assert (r.json()["max_dwell_s"], r.json()["max_empty_s"]) == (None, None)
+
+    for bad in (0, -5, 100000):
+        r = client.post("/api/zones", json={"name": f"X{bad}", "polygon": TRIANGLE, "max_dwell_s": bad})
+        assert r.status_code == 422
+
+
 def test_export_then_import_roundtrip(ctx):
     client, _ = ctx
-    client.post("/api/zones", json={"name": "Lijado", "polygon": TRIANGLE})
+    client.post("/api/zones", json={"name": "Lijado", "polygon": TRIANGLE, "max_dwell_s": 30})
     client.post("/api/zones", json={"name": "Prohibido", "kind": "restricted", "polygon": TRIANGLE})
     exported = client.get("/api/zones/export")
+    assert exported.json()["zones"][0]["max_dwell_s"] == 30
     assert "attachment" in exported.headers["content-disposition"]
     data = exported.json()
     assert [z["name"] for z in data["zones"]] == ["Lijado", "Prohibido"]

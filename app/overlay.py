@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from app.domain import Detection
+from app.formatting import format_duration
 from app.occupancy import ZoneStatus
 from app.zones import Point, Zone
 
@@ -86,6 +87,8 @@ def draw_label(
 
 
 ZONE_FILL_ALPHA = 0.22
+ALERT_COLOR: Color = (73, 81, 248)   # rojo (#f85149), el mismo de la web
+MAX_BANNER_ALERTS = 3
 
 
 def track_color(track_id: int) -> Color:
@@ -98,14 +101,6 @@ def hex_to_bgr(color: str) -> Color:
     return (b, g, r)
 
 
-def format_duration(seconds: float) -> str:
-    """12 → 0:12 · 754 → 12:34 · 3754 → 1:02:34"""
-    total = max(0, int(seconds))
-    hours, rest = divmod(total, 3600)
-    minutes, secs = divmod(rest, 60)
-    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
-
-
 def _zone_label(status: ZoneStatus, now: float) -> str:
     count = len(status.present)
     prefix = "⚠ " if status.zone.kind == "restricted" else ""
@@ -115,21 +110,26 @@ def _zone_label(status: ZoneStatus, now: float) -> str:
     return f"{prefix}{status.zone.name} · vacía {empty_for}".rstrip()
 
 
-def draw_zones(frame: np.ndarray, statuses: list[ZoneStatus], now: float) -> None:
+def draw_zones(
+    frame: np.ndarray, statuses: list[ZoneStatus], now: float, alert_zone_ids: set[int] | None = None
+) -> None:
+    """Zonas semitransparentes con nombre y ocupación. Las que tienen una alerta activa, en rojo y con borde grueso."""
     if not statuses:
         return
+    alert_zone_ids = alert_zone_ids or set()
     h, w = frame.shape[:2]
     layer = frame.copy()
     shapes = []
     for status in statuses:
         pts = np.array([[round(x * w), round(y * h)] for x, y in status.zone.polygon], dtype=np.int32)
-        color = hex_to_bgr(status.zone.color)
+        in_alert = status.zone.id in alert_zone_ids
+        color = ALERT_COLOR if in_alert else hex_to_bgr(status.zone.color)
         cv2.fillPoly(layer, [pts], color)
-        shapes.append((pts, color, status))
+        shapes.append((pts, color, status, in_alert))
     cv2.addWeighted(layer, ZONE_FILL_ALPHA, frame, 1 - ZONE_FILL_ALPHA, 0, dst=frame)
 
-    for pts, color, status in shapes:
-        cv2.polylines(frame, [pts], True, color, 2, cv2.LINE_AA)
+    for pts, color, status, in_alert in shapes:
+        cv2.polylines(frame, [pts], True, color, 4 if in_alert else 2, cv2.LINE_AA)
         text = _zone_label(status, now)
         label_h = _label_patch(text, 14, BLACK, color, 230, True).shape[0]
         top_x, top_y = pts[np.argmin(pts[:, 1])]  # vértice más alto: la etiqueta va justo arriba
@@ -152,13 +152,18 @@ def draw_detections(
     scale: float,
     anchors: dict[int, Point] | None = None,
     track_zones: dict[int, list[tuple[Zone, float]]] | None = None,
+    alert_track_ids: set[int] | None = None,
 ) -> None:
-    """Caja e ID de cada persona; si está en zonas, el nombre y el tiempo dentro; y el punto que decide la zona."""
+    """Caja e ID de cada persona; si está en zonas, el nombre y el tiempo dentro; y el punto que decide la zona.
+
+    Quien tiene una alerta activa (permanencia, zona restringida) se dibuja en rojo.
+    """
     h, w = frame.shape[:2]
     for det in detections:
-        color = track_color(det.track_id)
+        in_alert = det.track_id in (alert_track_ids or set())
+        color = ALERT_COLOR if in_alert else track_color(det.track_id)
         x1, y1, x2, y2 = (round(v * scale) for v in det.bbox)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3 if in_alert else 2, cv2.LINE_AA)
 
         parts = [f"ID {det.track_id}"]
         parts += [f"{zone.name} {format_duration(dwell)}" for zone, dwell in (track_zones or {}).get(det.track_id, [])]
@@ -176,6 +181,20 @@ def draw_detections(
 
 def draw_status_bar(frame: np.ndarray, text: str) -> None:
     draw_label(frame, text, (8, 8), size=14, bg_alpha=150)
+
+
+def draw_alert_banner(frame: np.ndarray, messages: list[str]) -> None:
+    """Alertas activas apiladas abajo a la izquierda; `messages` va de la más vieja a la más nueva."""
+    if not messages:
+        return
+    lines = [f"⚠ {m}" for m in messages[-MAX_BANNER_ALERTS:]]
+    if len(messages) > MAX_BANNER_ALERTS:
+        lines.insert(0, f"+ {len(messages) - MAX_BANNER_ALERTS} alerta(s) más")
+    y = frame.shape[0] - 8
+    for line in reversed(lines):  # de abajo hacia arriba: la más nueva queda pegada al borde
+        y -= _label_patch(line, 15, WHITE, ALERT_COLOR, 235, True).shape[0]
+        draw_label(frame, line, (8, y), size=15, fg=WHITE, bg=ALERT_COLOR, bg_alpha=235, bold=True)
+        y -= 4
 
 
 def placeholder_frame(width: int, height: int, title: str, subtitle: str) -> np.ndarray:

@@ -1,4 +1,5 @@
 """Pipeline completo con un detector falso (sin YOLO): fuente → detección → JPEG + estado."""
+import sqlite3
 import time
 from pathlib import Path
 
@@ -10,7 +11,9 @@ from app.capture import FrameSource
 from app.config import AppConfig
 from app.domain import Detection
 from app.pipeline import Pipeline
+from app.recorder import Recorder
 from app.storage import Storage
+from app.zones import ZoneSpec
 
 WHOLE_FRAME = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
 RIGHT_EDGE = ((0.9, 0.0), (1.0, 0.0), (1.0, 1.0), (0.9, 1.0))
@@ -81,7 +84,7 @@ def test_pipeline_publishes_jpeg_and_state(video_file, storage):
 
 
 def test_person_inside_zone_is_counted_and_zones_reload(video_file, storage):
-    storage.create_zone("cam1", "Todo", "work", WHOLE_FRAME)
+    storage.create_zone("cam1", ZoneSpec("Todo", "work", WHOLE_FRAME))
     source = FrameSource(str(video_file))
     pipeline = Pipeline(AppConfig(), source, FakeDetector, storage)
     source.start()
@@ -92,7 +95,7 @@ def test_person_inside_zone_is_counted_and_zones_reload(video_file, storage):
         assert zone_state(pipeline, "Todo")["occupants"][0]["track_id"] == 7
 
         # Zona nueva en caliente, lejos de la persona: aparece vacía.
-        storage.create_zone("cam1", "Borde", "restricted", RIGHT_EDGE)
+        storage.create_zone("cam1", ZoneSpec("Borde", "restricted", RIGHT_EDGE))
         pipeline.request_zones_reload()
         assert wait_until(lambda: any(z["name"] == "Borde" for z in pipeline.state["zones"]))
         borde = zone_state(pipeline, "Borde")
@@ -100,6 +103,33 @@ def test_person_inside_zone_is_counted_and_zones_reload(video_file, storage):
     finally:
         pipeline.stop()
         source.stop()
+
+
+def test_alerts_and_history_are_recorded_and_closed_on_shutdown(video_file, storage):
+    storage.create_zone("cam1", ZoneSpec("Todo", "work", WHOLE_FRAME, max_dwell_s=1))
+    recorder = Recorder(storage.path, "cam1")
+    source = FrameSource(str(video_file))
+    pipeline = Pipeline(AppConfig(), source, FakeDetector, storage, recorder)
+    recorder.start()
+    source.start()
+    pipeline.start()
+    try:
+        assert wait_until(lambda: pipeline.state["alerts"]["active"])
+        [alert] = pipeline.state["alerts"]["active"]
+        assert alert["kind"] == "dwell" and alert["track_id"] == 7 and "Todo" in alert["message"]
+    finally:
+        pipeline.stop()
+        recorder.stop()
+        source.stop()
+
+    con = sqlite3.connect(storage.path)
+    sessions = con.execute("SELECT start_ts, end_ts FROM sessions").fetchall()
+    visits = con.execute("SELECT zone_name, track_id, end_ts, closed_by FROM visits").fetchall()
+    alerts = con.execute("SELECT kind, resolved_ts FROM alerts").fetchall()
+    con.close()
+    assert len(sessions) == 1 and sessions[0][1] is not None          # sesión cerrada al apagar
+    assert [(v[0], v[1], v[3]) for v in visits] == [("Todo", 7, "exit")] and visits[0][2] is not None
+    assert alerts[0][0] == "dwell" and alerts[0][1] is not None        # alerta resuelta al apagar
 
 
 def test_unexpected_error_does_not_stop_the_pipeline(video_file, storage, monkeypatch):

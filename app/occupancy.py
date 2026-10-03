@@ -43,6 +43,7 @@ class Occupant:
     enter_ts: float
     dwell_s: float
     present: bool       # visto dentro hace menos de PRESENCE_WINDOW_S
+    visit_id: int
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,9 @@ class OccupancyEngine:
         return self._now - visit.last_seen <= PRESENCE_WINDOW_S
 
     def _occupant(self, track_id: int, visit: _Visit) -> Occupant:
-        return Occupant(track_id, visit.enter_ts, visit.last_seen - visit.enter_ts, self._is_present(visit))
+        return Occupant(
+            track_id, visit.enter_ts, visit.last_seen - visit.enter_ts, self._is_present(visit), visit.visit_id
+        )
 
     def _update_zone(
         self, zone_id: int, inside: set[int], points: Mapping[int, Point], ts: float

@@ -183,7 +183,7 @@ main { padding: var(--space-4); min-height: 0; }
 .form { display: flex; flex-direction: column; gap: var(--space-3); }
 .field { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; border: 0; }
 .field > span, .field > legend { color: var(--text-muted); font-size: 13px; padding: 0; margin-bottom: var(--space-1); }
-.field input:not([type]) {
+.field input:not([type]), .field input[type="number"] {
   padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -192,6 +192,44 @@ main { padding: var(--space-4); min-height: 0; }
   font: inherit;
 }
 .radio { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.inline-field { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.inline-field span:first-child { flex: 1; }
+.field .inline-field input[type="number"] { width: 6em; text-align: right; }
+.field-help { margin: 0; color: var(--text-muted); font-size: 12px; }
+
+/* ---------- Alertas ---------- */
+.alerts-card[data-active="true"] { border-color: var(--danger); }
+.alerts-card[data-active="true"] h2 { color: var(--danger); }
+.alert-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.alert-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-2);
+  padding: var(--space-2);
+  border-left: 3px solid var(--danger);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.alert-kind { font-weight: 600; color: var(--danger); }
+.alert-time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.alert-message { grid-column: 1 / -1; font-size: 13px; }
+.recent .alert-item { border-left-color: var(--border); opacity: 0.75; }
+.recent .alert-kind { color: var(--text-muted); }
+.subhead {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.tab-badge {
+  margin-left: var(--space-1);
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #111;
+  font-size: 12px;
+  font-weight: 700;
+}
 .radio input { accent-color: var(--accent); margin: 0; }
 .form-error { margin: 0; color: var(--danger); min-height: 1em; }
 .form-error:empty { display: none; }
