@@ -14,7 +14,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.metrics import AlertRow, SessionRow, VisitRow
 from app.zones import Zone, ZoneSpec
+
+MAX_DASHBOARD_ALERTS = 500
 
 MIGRATIONS: tuple[str, ...] = (
     # 1: zonas
@@ -181,6 +184,35 @@ class Storage:
         except sqlite3.IntegrityError as exc:
             raise ZoneNameTaken("nombres repetidos en el archivo importado") from exc
         return self.list_zones(camera_id)
+
+    # ---------- Lectura para el dashboard ----------
+
+    def dashboard_rows(
+        self, camera_id: str, lo: float, hi: float
+    ) -> tuple[list[SessionRow], list[VisitRow], list[AlertRow]]:
+        """Sesiones y visitas que se superponen con [lo, hi] y alertas disparadas en ese rango."""
+        overlap = "camera_id = ? AND start_ts < ? AND (end_ts IS NULL OR end_ts > ?)"
+        with self._tx() as con:
+            sessions = [
+                SessionRow(r["start_ts"], r["end_ts"])
+                for r in con.execute(f"SELECT start_ts, end_ts FROM sessions WHERE {overlap}", (camera_id, hi, lo))
+            ]
+            visits = [
+                VisitRow(r["zone_id"], r["track_id"], r["start_ts"], r["end_ts"], r["person_id"])
+                for r in con.execute(
+                    f"SELECT zone_id, track_id, start_ts, end_ts, person_id FROM visits WHERE {overlap}",
+                    (camera_id, hi, lo),
+                )
+            ]
+            alerts = [
+                AlertRow(r["id"], r["kind"], r["zone_id"], r["zone_name"], r["track_id"], r["ts"],
+                         r["resolved_ts"], r["message"])
+                for r in con.execute(
+                    "SELECT * FROM alerts WHERE camera_id = ? AND ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+                    (camera_id, lo, hi, MAX_DASHBOARD_ALERTS),
+                )
+            ]
+        return sessions, visits, alerts
 
     # ---------- Recuperación tras un corte ----------
 

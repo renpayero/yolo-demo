@@ -1,9 +1,10 @@
 import { connectState } from './state.js';
 import { createLivePanel, renderConnectionPill } from './live.js';
 import { createZonesEditor } from './zones-editor.js';
+import { createDashboard } from './dashboard.js';
 
 const live = createLivePanel();
-const panels = { 'panel-live': live, 'panel-zones': createZonesEditor() };
+const panels = { 'panel-live': live, 'panel-zones': createZonesEditor(), 'panel-metrics': createDashboard() };
 const pill = document.getElementById('conn-pill');
 
 // ---------- Pestañas ----------

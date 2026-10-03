@@ -13,6 +13,7 @@
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab" role="tab" id="tab-live" data-panel="panel-live" aria-controls="panel-live" aria-selected="true">En vivo <span class="tab-badge" id="alert-badge" hidden></span></button>
       <button class="tab" role="tab" id="tab-zones" data-panel="panel-zones" aria-controls="panel-zones" aria-selected="false">Zonas</button>
+      <button class="tab" role="tab" id="tab-metrics" data-panel="panel-metrics" aria-controls="panel-metrics" aria-selected="false">Métricas</button>
     </nav>
     <p class="pill" id="conn-pill" role="status" data-level="idle"><span class="dot" aria-hidden="true"></span><span class="pill-text">Conectando…</span></p>
   </header>
@@ -118,6 +119,93 @@
           <p class="empty" id="zone-list-empty">Todavía no hay zonas. Tocá «Nueva zona» y marcá los vértices sobre la imagen.</p>
         </section>
       </aside>
+    </section>
+
+    <section class="panel metrics" id="panel-metrics" role="tabpanel" aria-labelledby="tab-metrics" hidden>
+      <div class="filters" role="group" aria-label="Rango horario">
+        <div class="segmented" id="range-presets">
+          <button type="button" data-range="15m" aria-pressed="true">Últimos 15 min</button>
+          <button type="button" data-range="1h" aria-pressed="false">Última hora</button>
+          <button type="button" data-range="8h" aria-pressed="false">Últimas 8 h</button>
+          <button type="button" data-range="today" aria-pressed="false">Hoy</button>
+          <button type="button" data-range="custom" aria-pressed="false">Personalizado</button>
+        </div>
+        <form class="custom-range" id="custom-range" hidden>
+          <label>Desde <input type="datetime-local" id="range-from" required></label>
+          <label>Hasta <input type="datetime-local" id="range-to" required></label>
+          <button type="submit" class="btn">Aplicar</button>
+        </form>
+        <p class="range-status" id="range-status" role="status"></p>
+      </div>
+
+      <div class="metrics-body" id="metrics-body">
+        <div class="kpi-row">
+          <div class="stat"><p class="stat-label">Tiempo con video</p><p class="stat-value" id="kpi-monitored">—</p></div>
+          <div class="stat"><p class="stat-label">Visitas a zonas</p><p class="stat-value" id="kpi-visits">—</p></div>
+          <div class="stat"><p class="stat-label">Alertas</p><p class="stat-value" id="kpi-alerts">—</p><p class="stat-sub" id="kpi-alerts-sub"></p></div>
+          <div class="stat"><p class="stat-label">Máximo de personas en zonas</p><p class="stat-value" id="kpi-peak">—</p></div>
+        </div>
+
+        <section class="card" aria-labelledby="occ-title">
+          <h2 id="occ-title">Ocupación por zona</h2>
+          <div class="table-wrap">
+            <table class="data-table" id="zone-kpis">
+              <thead>
+                <tr>
+                  <th scope="col">Zona</th>
+                  <th scope="col">Ocupación</th>
+                  <th scope="col" class="num">Ocupada</th>
+                  <th scope="col" class="num">Vacía</th>
+                  <th scope="col" class="num">Visitas</th>
+                  <th scope="col" class="num">Promedio</th>
+                  <th scope="col" class="num">Máxima</th>
+                  <th scope="col" class="num" title="Suma del tiempo de todas las personas: 2 personas 10 min = 20 min-persona">Tiempo-persona</th>
+                  <th scope="col" class="num">Alertas</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="empty" id="zone-kpis-empty" hidden>No hay zonas marcadas. Marcalas en la pestaña «Zonas».</p>
+        </section>
+
+        <section class="card chart-card" aria-labelledby="timeline-title">
+          <h2 id="timeline-title">Línea de tiempo de ocupación</h2>
+          <p class="chart-sub">Barras: zona ocupada · <span class="key-alert" aria-hidden="true">▼</span> alerta · gris: sin video</p>
+          <div class="chart" id="timeline-chart"></div>
+          <details class="table-twin">
+            <summary>Ver como tabla</summary>
+            <div class="table-wrap"><table class="data-table" id="timeline-table">
+              <thead><tr><th scope="col">Zona</th><th scope="col">Desde</th><th scope="col">Hasta</th><th scope="col" class="num">Duración</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </details>
+        </section>
+
+        <section class="card chart-card" aria-labelledby="headcount-title">
+          <h2 id="headcount-title">Personas en zonas</h2>
+          <p class="chart-sub">Total de personas dentro de alguna zona; el detalle por zona aparece al pasar el mouse.</p>
+          <div class="chart" id="headcount-chart"></div>
+          <details class="table-twin">
+            <summary>Ver como tabla</summary>
+            <div class="table-wrap"><table class="data-table" id="headcount-table">
+              <thead><tr><th scope="col">Desde</th><th scope="col" class="num">Personas</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </details>
+        </section>
+
+        <section class="card" aria-labelledby="alerts-table-title">
+          <h2 id="alerts-table-title">Alertas del período</h2>
+          <div class="table-wrap scroll-table">
+            <table class="data-table" id="alerts-table">
+              <thead><tr><th scope="col">Hora</th><th scope="col">Tipo</th><th scope="col">Zona</th><th scope="col">Detalle</th><th scope="col" class="num">Duración</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="empty" id="alerts-table-empty" hidden>Sin alertas en este período.</p>
+        </section>
+      </div>
     </section>
   </main>
 </body>

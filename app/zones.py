@@ -12,7 +12,10 @@ Point = tuple[float, float]
 
 ZONE_KINDS = ("work", "restricted")
 ANCHORS = ("center", "torso", "feet")
-ZONE_PALETTE = ("#2f81f7", "#3fb950", "#d29922", "#39c5cf", "#f778ba", "#e3b341", "#79c0ff", "#a371f7")
+# Paleta categórica validada para daltonismo sobre la superficie oscura de la UI (validate_palette.js, modo
+# oscuro, superficie #161a20: banda de luminosidad, croma, separación CVD ≥ 8 y contraste ≥ 3:1). El orden es
+# parte de la validación: no reordenar ni agregar colores. El rojo queda fuera: es de alertas y restringidas.
+ZONE_PALETTE = ("#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9")
 RESTRICTED_COLOR = "#f85149"
 TORSO_RATIO = 0.35  # altura del pecho, medida desde arriba de la caja de la persona
 
