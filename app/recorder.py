@@ -73,26 +73,47 @@ class Recorder:
 
         self._queue.put(op)
 
-    def zone_events(self, events: Iterable[ZoneEvent], zone_names: Mapping[int, str]) -> None:
+    def zone_events(
+        self,
+        events: Iterable[ZoneEvent],
+        zone_names: Mapping[int, str],
+        persons: Mapping[int, int] | None = None,   # track → persona identificada
+    ) -> None:
+        persons = persons or {}
         for event in events:
             if event.kind == "enter":
-                self._queue.put(self._visit_open_op(event, zone_names.get(event.zone_id, f"zona {event.zone_id}")))
+                zone_name = zone_names.get(event.zone_id, f"zona {event.zone_id}")
+                self._queue.put(self._visit_open_op(event, zone_name, persons.get(event.track_id)))
             elif event.kind == "exit":
                 self._queue.put(self._visit_close_op(event))
 
-    def alert_changes(self, changes: Iterable[AlertChange]) -> None:
+    def visit_person(self, visit_id: int, person_id: int) -> None:
+        """La persona se identificó con la visita ya abierta: se le asigna desde el comienzo."""
+        def op(con: sqlite3.Connection) -> None:
+            row_id = self._visit_rows.get(visit_id)
+            if row_id is not None:
+                con.execute("UPDATE visits SET person_id = ? WHERE id = ?", (person_id, row_id))
+
+        self._queue.put(op)
+
+    def alert_changes(self, changes: Iterable[AlertChange], persons: Mapping[int, int] | None = None) -> None:
+        persons = persons or {}
         for change in changes:
-            op = self._alert_raise_op(change) if change.action == "raise" else self._alert_resolve_op(change)
+            if change.action == "raise":
+                op = self._alert_raise_op(change, persons.get(change.alert.track_id))
+            else:
+                op = self._alert_resolve_op(change)
             self._queue.put(op)
 
     # ---------- Operaciones (corren en el hilo escritor) ----------
 
-    def _visit_open_op(self, event: ZoneEvent, zone_name: str) -> Operation:
+    def _visit_open_op(self, event: ZoneEvent, zone_name: str, person_id: int | None) -> Operation:
         def op(con: sqlite3.Connection) -> None:
             cur = con.execute(
-                "INSERT INTO visits (camera_id, session_id, zone_id, zone_name, track_id, start_ts)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (self._camera_id, self._session_id, event.zone_id, zone_name, event.track_id, event.enter_ts),
+                "INSERT INTO visits (camera_id, session_id, zone_id, zone_name, track_id, person_id, start_ts)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (self._camera_id, self._session_id, event.zone_id, zone_name, event.track_id, person_id,
+                 event.enter_ts),
             )
             self._visit_rows[event.visit_id] = cur.lastrowid
 
@@ -109,14 +130,14 @@ class Recorder:
 
         return op
 
-    def _alert_raise_op(self, change: AlertChange) -> Operation:
+    def _alert_raise_op(self, change: AlertChange, person_id: int | None) -> Operation:
         alert = change.alert
 
         def op(con: sqlite3.Connection) -> None:
             cur = con.execute(
-                "INSERT INTO alerts (camera_id, kind, zone_id, zone_name, track_id, ts, value_s, message)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (self._camera_id, alert.kind, alert.zone_id, alert.zone_name, alert.track_id, alert.ts,
+                "INSERT INTO alerts (camera_id, kind, zone_id, zone_name, track_id, person_id, ts, value_s, message)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (self._camera_id, alert.kind, alert.zone_id, alert.zone_name, alert.track_id, person_id, alert.ts,
                  alert.value_s, alert.message),
             )
             self._alert_rows[alert.uid] = cur.lastrowid

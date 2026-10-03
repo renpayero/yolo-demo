@@ -14,7 +14,9 @@
       <button class="tab" role="tab" id="tab-live" data-panel="panel-live" aria-controls="panel-live" aria-selected="true">En vivo <span class="tab-badge" id="alert-badge" hidden></span></button>
       <button class="tab" role="tab" id="tab-zones" data-panel="panel-zones" aria-controls="panel-zones" aria-selected="false">Zonas</button>
       <button class="tab" role="tab" id="tab-metrics" data-panel="panel-metrics" aria-controls="panel-metrics" aria-selected="false">Métricas</button>
+      <button class="tab" role="tab" id="tab-persons" data-panel="panel-persons" aria-controls="panel-persons" aria-selected="false">Personas</button>
     </nav>
+    <p class="pill pill-ident" id="ident-pill" hidden><span class="dot" aria-hidden="true"></span>Identificación facial activa</p>
     <p class="pill" id="conn-pill" role="status" data-level="idle"><span class="dot" aria-hidden="true"></span><span class="pill-text">Conectando…</span></p>
   </header>
 
@@ -195,6 +197,17 @@
           </details>
         </section>
 
+        <section class="card" aria-labelledby="persons-table-title" id="persons-table-card">
+          <h2 id="persons-table-title">Por persona</h2>
+          <div class="table-wrap">
+            <table class="data-table" id="persons-table">
+              <thead><tr><th scope="col">Persona</th><th scope="col">Zona</th><th scope="col" class="num">Visitas</th><th scope="col" class="num">Tiempo</th><th scope="col" class="num">Promedio</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="empty" id="persons-table-empty">Nadie identificado en este período. La identificación se activa en la pestaña «Personas».</p>
+        </section>
+
         <section class="card" aria-labelledby="alerts-table-title">
           <h2 id="alerts-table-title">Alertas del período</h2>
           <div class="table-wrap scroll-table">
@@ -206,6 +219,55 @@
           <p class="empty" id="alerts-table-empty" hidden>Sin alertas en este período.</p>
         </section>
       </div>
+    </section>
+
+    <section class="panel persons" id="panel-persons" role="tabpanel" aria-labelledby="tab-persons" hidden>
+      <div class="persons-main">
+        <section class="card" aria-labelledby="ident-title">
+          <div class="card-header">
+            <h2 id="ident-title">Identificación de personas</h2>
+            <button type="button" class="switch" id="ident-switch" role="switch" aria-checked="false" aria-labelledby="ident-title">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              <span class="switch-label" id="ident-switch-label">Apagada</span>
+            </button>
+          </div>
+          <p class="lead">Prendida, el sistema reconoce a las personas registradas y pone su nombre en el video y en las métricas. Apagada, todo funciona igual en forma anónima y no se procesa ninguna cara.</p>
+          <ul class="privacy-list">
+            <li>Solo se reconoce a quien se registró con su consentimiento.</li>
+            <li>No se guardan fotos: solo una huella numérica de la cara.</li>
+            <li>Mientras está activa, el video y la barra superior lo avisan en rojo.</li>
+            <li>Borrar a una persona elimina su huella; su historial queda, pero anónimo.</li>
+          </ul>
+        </section>
+
+        <section class="card" aria-labelledby="enroll-title">
+          <h2 id="enroll-title">Registrar persona</h2>
+          <form id="enroll-form" class="form" novalidate>
+            <label class="field">
+              <span>Nombre</span>
+              <input id="enroll-name" maxlength="40" autocomplete="off" placeholder="Ej.: Juan Pérez">
+            </label>
+            <label class="consent">
+              <input type="checkbox" id="enroll-consent">
+              <span>La persona fue informada y <strong>da su consentimiento</strong> para ser identificada por reconocimiento facial en esta demostración.</span>
+            </label>
+            <p class="field-help">Al tocar el botón, la persona tiene que estar sola frente a la cámara, mirando de frente y a menos de 1,5 m. La captura dura unos 3 segundos.</p>
+            <p class="form-error" id="enroll-error" role="alert"></p>
+            <p class="form-ok" id="enroll-status" role="status"></p>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="enroll-submit">Capturar y registrar</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <aside class="sidebar">
+        <section class="card" aria-labelledby="persons-title">
+          <h2 id="persons-title">Personas registradas</h2>
+          <ul class="person-list" id="person-list"></ul>
+          <p class="empty" id="person-list-empty">Todavía no hay nadie registrado.</p>
+        </section>
+      </aside>
     </section>
   </main>
 </body>

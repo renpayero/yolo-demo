@@ -1,6 +1,7 @@
 import json
 import sqlite3
 
+import numpy as np
 import pytest
 
 from app.storage import MIGRATIONS, Storage, ZoneNameTaken
@@ -42,6 +43,27 @@ def test_existing_v1_database_is_migrated_keeping_zones(tmp_path):
 
     zones = Storage(path).list_zones("cam1")
     assert [(z.name, z.max_dwell_s, z.max_empty_s) for z in zones] == [("Lijado", None, None)]
+
+
+def test_v2_database_gets_persons_tables(tmp_path):
+    path = tmp_path / "vision.db"
+    con = sqlite3.connect(path)
+    con.executescript(MIGRATIONS[0])
+    con.executescript(MIGRATIONS[1])
+    con.execute("PRAGMA user_version = 2")
+    con.commit()
+    con.close()
+    storage = Storage(path)
+    assert storage.list_persons() == [] and storage.load_embeddings() == {}
+
+
+def test_embeddings_roundtrip(storage):
+    vectors = np.random.default_rng(1).normal(size=(3, 128)).astype(np.float32)
+    person = storage.create_person("Ana", vectors)
+    loaded = storage.load_embeddings()
+    assert list(loaded) == [person.id]
+    assert np.allclose(loaded[person.id], vectors)
+    assert storage.person_names() == {person.id: "Ana"}
 
 
 def test_zone_crud(storage):

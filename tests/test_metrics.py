@@ -113,6 +113,22 @@ def test_dashboard_without_video_has_no_percentage():
     assert result["unmonitored"] == [(110, 140)]
 
 
+def test_per_person_breakdown():
+    visits = [
+        VisitRow(1, 7, 10, 30, person_id=5),
+        VisitRow(1, 7, 50, 60, person_id=5),
+        VisitRow(2, 7, 70, 100, person_id=5),
+        VisitRow(1, 8, 10, 90, person_id=None),   # anónima: no aparece por persona
+    ]
+    alerts = [AlertRow(1, "dwell", 1, "Lijado", 7, 25.0, 30.0, "x", person_id=5)]
+    result = build_dashboard([LIJADO, EMBALAJE], [SessionRow(0, 100)], visits, alerts, lo=0, hi=100, now=200,
+                             person_names={5: "Ana", 6: "Beto"})
+    [ana] = result["persons"]                      # Beto no tuvo actividad: no aparece
+    assert (ana["name"], ana["visits"], ana["time_s"], ana["alerts"]) == ("Ana", 3, 60, 1)
+    by_zone = {z["zone_name"]: (z["visits"], z["time_s"], z["avg_visit_s"]) for z in ana["zones"]}
+    assert by_zone == {"Lijado": (2, 30, 15), "Embalaje": (1, 30, 30)}
+
+
 def test_headcount_series_totals_and_per_zone():
     visits = [VisitRow(1, 7, 10, 30), VisitRow(1, 8, 20, 40), VisitRow(2, 9, 25, 35)]
     result = build_dashboard([LIJADO, EMBALAJE], [SessionRow(0, 100)], visits, [], lo=0, hi=100, now=200)

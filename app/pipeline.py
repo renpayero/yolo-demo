@@ -8,9 +8,12 @@ en `Recorder`, que escribe en SQLite desde otro hilo sin frenar el video.
 from __future__ import annotations
 
 import logging
+import queue
 import threading
 import time
 from collections import deque
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -22,10 +25,12 @@ from app.capture import Frame, FrameSource
 from app.config import AppConfig
 from app.detector import PersonDetector
 from app.domain import Detection
+from app.faces import ENROLL_TIMEOUT_S, EnrollmentError, IdentityChange, Recognizer
 from app.occupancy import OccupancyEngine, ZoneEvent, ZoneStatus
 from app.overlay import (
     draw_alert_banner,
     draw_detections,
+    draw_identification_badge,
     draw_status_bar,
     draw_zones,
     placeholder_frame,
@@ -109,6 +114,7 @@ class Pipeline:
         detector_factory: Callable[[], PersonDetector],
         storage: Storage,
         recorder: Recorder | None = None,
+        recognizer: Recognizer | None = None,
     ) -> None:
         self._cfg = cfg
         self._source = source
@@ -117,6 +123,11 @@ class Pipeline:
         self._recorder = recorder
         self._stop = threading.Event()
         self._reload_zones = threading.Event()
+        self._commands: queue.Queue[Callable[[], None]] = queue.Queue()   # pedidos de la API, en orden
+        self._recognizer = recognizer or Recognizer(cfg.identification)
+        self._identification = cfg.identification.enabled
+        self._person_names = storage.person_names()
+        self._recognizer.set_gallery(storage.load_embeddings())
         self._thread = threading.Thread(target=self._run, name="pipeline", daemon=True)
         self.hub = FrameHub()
         self._detector: PersonDetector | None = None
@@ -150,6 +161,51 @@ class Pipeline:
         """Lo llama la API al cambiar zonas; el pipeline las relee antes del próximo frame."""
         self._reload_zones.set()
 
+    # ---------- Identificación: pedidos desde la API (se ejecutan en el hilo del pipeline) ----------
+
+    @property
+    def identification_enabled(self) -> bool:
+        return self._identification
+
+    def set_identification(self, enabled: bool) -> None:
+        def command() -> None:
+            self._identification = enabled
+            if not enabled:
+                self._recognizer.clear()  # todos vuelven a ser anónimos en el acto
+            log.info("Identificación de personas %s", "ACTIVADA" if enabled else "desactivada")
+
+        self._commands.put(command)
+
+    def reload_persons(self, forget_person_id: int | None = None) -> None:
+        def command() -> None:
+            if forget_person_id is not None:
+                self._recognizer.forget_person(forget_person_id)
+            self._person_names = self._storage.person_names()
+            self._recognizer.set_gallery(self._storage.load_embeddings())
+
+        self._commands.put(command)
+
+    def enroll(self) -> np.ndarray:
+        """Captura huellas de la (única) cara frente a la cámara. Bloquea unos segundos; lanza EnrollmentError."""
+        future: Future = Future()
+        self._commands.put(lambda: self._recognizer.start_enrollment(future, time.monotonic()))
+        try:
+            return future.result(timeout=ENROLL_TIMEOUT_S + 4)
+        except FutureTimeout:
+            future.cancel()
+            raise EnrollmentError("El registro tardó demasiado; probá de nuevo.") from None
+
+    def match_existing(self, samples: np.ndarray) -> tuple[int | None, float]:
+        return self._recognizer.match_existing(samples)
+
+    def _run_commands(self) -> None:
+        while True:
+            try:
+                command = self._commands.get_nowait()
+            except queue.Empty:
+                return
+            command()
+
     # ---------- Bucle ----------
 
     def _run(self) -> None:
@@ -172,10 +228,12 @@ class Pipeline:
         self._shutdown()
 
     def _step(self, loop: _LoopState) -> None:
+        self._run_commands()
         self._apply_zone_reload()
         frame = self._source.wait_frame(loop.last_seq, timeout=0.5)
         now = time.monotonic()
         if frame is None:
+            self._recognizer.step_enrollment(None, now)
             self._step_without_video(loop, now)
             return
 
@@ -194,6 +252,10 @@ class Pipeline:
 
         anchors = self._anchors(detections, frame)
         self._process_events(frame.ts, self._engine.update(frame.ts, anchors))
+        if self._identification:
+            for change in self._recognizer.identify(frame.image, detections, frame.ts):
+                self._on_identity_change(change, frame.ts)
+        self._recognizer.step_enrollment(frame.image, now)
         statuses = self._engine.snapshot()
 
         if now >= loop.next_encode_at:
@@ -260,10 +322,39 @@ class Pipeline:
     def _process_events(self, ts: float, events: list[ZoneEvent]) -> None:
         """Toda la salida de los motores pasa por acá: log, registro y evaluación de alertas."""
         self._log_events(events)
+        for event in events:
+            if event.kind == "rebind":  # el tracker cambió el ID: el nombre pasa, en duda hasta ver la cara
+                self._recognizer.transfer(event.previous_track_id, event.track_id, ts)
+        persons = self._recognizer.assignments()
         if self._recorder and events:
-            self._recorder.zone_events(events, self._zone_names)
-        changes = self._alerts.evaluate(ts, self._engine.snapshot(), events, self._monitoring_since)
-        self._handle_alert_changes(changes)
+            self._recorder.zone_events(events, self._zone_names, persons)
+        changes = self._alerts.evaluate(
+            ts, self._engine.snapshot(), events, self._monitoring_since, self._track_names()
+        )
+        self._handle_alert_changes(changes, persons)
+
+    def _track_names(self) -> dict[int, str]:
+        return {
+            track_id: self._person_names[person_id]
+            for track_id, person_id in self._recognizer.assignments().items()
+            if person_id in self._person_names
+        }
+
+    def _on_identity_change(self, change: IdentityChange, ts: float) -> None:
+        track_id, person_id = change.track_id, change.person_id
+        if person_id is None:
+            # Otra persona heredó el track: la visita anterior se cierra cuando se vio por última vez a quien
+            # tenía el nombre y empieza una nueva, así el tiempo de cada uno queda bien atribuido.
+            log.info("Se retira el nombre de la persona %d: su cara ya no coincide (era otra persona)", track_id)
+            self._process_events(ts, self._engine.split_track(track_id, change.end_ts, change.start_ts))
+            return
+        log.info("Identificada: persona %d es %s", track_id, self._person_names.get(person_id, f"#{person_id}"))
+        if not self._recorder:
+            return
+        for status in self._engine.snapshot():  # sus visitas abiertas pasan a tener nombre desde el comienzo
+            for occupant in status.occupants:
+                if occupant.track_id == track_id:
+                    self._recorder.visit_person(occupant.visit_id, person_id)
 
     def _log_events(self, events: list[ZoneEvent]) -> None:
         for event in events:
@@ -275,7 +366,7 @@ class Pipeline:
             else:
                 log.info("Reasignación en %s: persona %d sigue como %d", zone, event.previous_track_id, event.track_id)
 
-    def _handle_alert_changes(self, changes: list[AlertChange]) -> None:
+    def _handle_alert_changes(self, changes: list[AlertChange], persons: dict[int, int] | None = None) -> None:
         for change in changes:
             if change.action == "raise":
                 log.warning("ALERTA: %s", change.alert.message)
@@ -283,7 +374,7 @@ class Pipeline:
                 log.info("Alerta resuelta: %s", change.alert.message)
                 self._recent_alerts.appendleft(_alert_dict(change.alert, resolved_ts=change.ts))
         if self._recorder and changes:
-            self._recorder.alert_changes(changes)
+            self._recorder.alert_changes(changes, persons)
 
     # ---------- Salidas: video y estado ----------
 
@@ -300,8 +391,11 @@ class Pipeline:
         draw_detections(
             view, detections, scale, anchors, self._engine.track_zones(),
             {a.track_id for a in active if a.track_id is not None},
+            self._track_names(),
         )
         draw_status_bar(view, f"{self._fps.fps:4.1f} fps · {self._detector.device} · {self._detector.model_name}")
+        if self._identification:
+            draw_identification_badge(view)
         draw_alert_banner(view, [a.message for a in active])
         self._publish_jpeg(view)
 
@@ -325,6 +419,7 @@ class Pipeline:
         status = self._source.status()
         if statuses is None:
             statuses = self._engine.snapshot()
+        names = self._track_names()
         return {
             "ts": now,
             "phase": phase,
@@ -351,7 +446,10 @@ class Pipeline:
                     "kind": s.zone.kind,
                     "color": s.zone.color,
                     "count": len(s.present),
-                    "occupants": [{"track_id": o.track_id, "dwell_s": round(o.dwell_s, 1)} for o in s.present],
+                    "occupants": [
+                        {"track_id": o.track_id, "name": names.get(o.track_id), "dwell_s": round(o.dwell_s, 1)}
+                        for o in s.present
+                    ],
                     "empty_for_s": round(now - s.empty_since, 1) if s.empty_since is not None else None,
                 }
                 for s in statuses
@@ -359,6 +457,11 @@ class Pipeline:
             "alerts": {
                 "active": [_alert_dict(a) for a in self._alerts.active],
                 "recent": list(self._recent_alerts),
+            },
+            "identification": {
+                "enabled": self._identification,
+                "persons": len(self._person_names),
+                "identified_now": len(names),
             },
         }
 

@@ -31,6 +31,14 @@ ADD --chmod=644 https://github.com/ultralytics/assets/releases/download/v8.4.0/y
 ADD --chmod=644 https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-pose.pt /models/yolo26s-pose.pt
 ADD --chmod=644 https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.pt /models/yolo26n-pose.pt
 
+# Identificación facial (opcional, apagada por defecto): OpenCV Zoo, licencias MIT (YuNet) y Apache-2.0 (SFace).
+ADD --chmod=644 --checksum=sha256:ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0 \
+    https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2026may.onnx \
+    /models/face_detection_yunet_2026may.onnx
+ADD --chmod=644 --checksum=sha256:0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79 \
+    https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx \
+    /models/face_recognition_sface_2021dec.onnx
+
 COPY config.yaml ./config.yaml
 COPY tests ./tests
 COPY app ./app

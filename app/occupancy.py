@@ -108,6 +108,22 @@ class OccupancyEngine:
             events += self._update_zone(zone_id, inside, points, ts)
         return events
 
+    def split_track(self, track_id: int, end_ts: float, start_ts: float) -> list[ZoneEvent]:
+        """Otra persona heredó el track (lo detectó el reconocimiento facial): se cierran sus visitas en `end_ts`
+        y se abren visitas nuevas desde `start_ts`, así cada persona se queda con su parte del tiempo."""
+        events: list[ZoneEvent] = []
+        for zone_id, visits in self._visits.items():
+            visit = visits.get(track_id)
+            if visit is None:
+                continue
+            end = max(visit.enter_ts, min(end_ts, visit.last_seen))
+            events.append(ZoneEvent("exit", zone_id, track_id, end, visit.enter_ts, end - visit.enter_ts, visit.visit_id))
+            new = _Visit(self._next_visit_id, start_ts, max(start_ts, visit.last_seen), visit.last_point)
+            self._next_visit_id += 1
+            visits[track_id] = new
+            events.append(ZoneEvent("enter", zone_id, track_id, start_ts, start_ts, 0.0, new.visit_id))
+        return events
+
     def close_all(self) -> list[ZoneEvent]:
         """Cierra todas las visitas sin esperar la gracia (al apagar el sistema)."""
         return [self._close(zone_id, tid) for zone_id in self._zones for tid in list(self._visits[zone_id])]

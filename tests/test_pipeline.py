@@ -8,8 +8,9 @@ import numpy as np
 import pytest
 
 from app.capture import FrameSource
-from app.config import AppConfig
+from app.config import AppConfig, IdentificationConfig
 from app.domain import Detection
+from app.faces import Face, Recognizer
 from app.pipeline import Pipeline
 from app.recorder import Recorder
 from app.storage import Storage
@@ -130,6 +131,103 @@ def test_alerts_and_history_are_recorded_and_closed_on_shutdown(video_file, stor
     assert len(sessions) == 1 and sessions[0][1] is not None          # sesión cerrada al apagar
     assert [(v[0], v[1], v[3]) for v in visits] == [("Todo", 7, "exit")] and visits[0][2] is not None
     assert alerts[0][0] == "dwell" and alerts[0][1] is not None        # alerta resuelta al apagar
+
+
+ANA = np.eye(128, dtype=np.float32)[0]
+
+
+class AlwaysAna:
+    """Motor facial falso: siempre ve una cara grande, que es la de Ana."""
+
+    def detect(self, image):
+        return [Face((0, 0, 100, 100), 0.99, None)]
+
+    def embed(self, image, face):
+        return ANA
+
+
+def test_identification_names_the_track_its_visit_and_can_be_turned_off(video_file, storage):
+    storage.create_zone("cam1", ZoneSpec("Todo", "work", WHOLE_FRAME))
+    ana = storage.create_person("Ana", ANA[None])
+    cfg = AppConfig(identification=IdentificationConfig(
+        enabled=True, min_face_px=5, check_interval_s=0.0, checks_per_frame=1, votes_needed=2,
+    ))
+    recorder = Recorder(storage.path, "cam1")
+    source = FrameSource(str(video_file))
+    pipeline = Pipeline(cfg, source, FakeDetector, storage, recorder, Recognizer(cfg.identification, AlwaysAna))
+    recorder.start()
+    source.start()
+    pipeline.start()
+    try:
+        def occupant_names():
+            return [(o["track_id"], o["name"]) for o in zone_state(pipeline, "Todo")["occupants"]]
+
+        assert wait_until(lambda: occupant_names() == [(7, "Ana")])
+        assert pipeline.state["identification"] == {"enabled": True, "persons": 1, "identified_now": 1}
+
+        samples = pipeline.enroll()          # captura de registro con la misma cámara
+        assert samples.shape == (5, 128)
+
+        pipeline.set_identification(False)   # apagada: todos anónimos en el acto
+        assert wait_until(lambda: occupant_names() == [(7, None)])
+    finally:
+        pipeline.stop()
+        recorder.stop()
+        source.stop()
+
+    con = sqlite3.connect(storage.path)
+    assert con.execute("SELECT person_id FROM visits").fetchall() == [(ana.id,)]
+    con.close()
+
+
+BETO = np.eye(128, dtype=np.float32)[1]
+
+
+class SwitchableFace:
+    """Motor facial falso cuya cara se puede cambiar a mitad de la prueba (otra persona hereda el track)."""
+
+    face = ANA
+
+    def detect(self, image):
+        return [Face((0, 0, 100, 100), 0.99, None)]
+
+    def embed(self, image, face):
+        return SwitchableFace.face
+
+
+def test_track_handover_splits_the_visit_between_people(video_file, storage):
+    storage.create_zone("cam1", ZoneSpec("Todo", "work", WHOLE_FRAME))
+    ana = storage.create_person("Ana", ANA[None])
+    beto = storage.create_person("Beto", BETO[None])
+    cfg = AppConfig(identification=IdentificationConfig(
+        enabled=True, min_face_px=5, check_interval_s=0.0, checks_per_frame=1, votes_needed=2,
+        recheck_interval_s=0.3,
+    ))
+    SwitchableFace.face = ANA
+    recorder = Recorder(storage.path, "cam1")
+    source = FrameSource(str(video_file))
+    pipeline = Pipeline(cfg, source, FakeDetector, storage, recorder, Recognizer(cfg.identification, SwitchableFace))
+    recorder.start()
+    source.start()
+    pipeline.start()
+
+    def names():
+        return [o["name"] for o in zone_state(pipeline, "Todo")["occupants"]]
+
+    try:
+        assert wait_until(lambda: names() == ["Ana"])
+        SwitchableFace.face = BETO           # mismo track 7, otra cara
+        assert wait_until(lambda: names() == ["Beto"])
+    finally:
+        pipeline.stop()
+        recorder.stop()
+        source.stop()
+
+    con = sqlite3.connect(storage.path)
+    visits = con.execute("SELECT person_id, start_ts, end_ts FROM visits ORDER BY id").fetchall()
+    con.close()
+    assert [v[0] for v in visits] == [ana.id, beto.id]
+    assert visits[0][2] <= visits[1][1]       # la de Ana termina antes de que empiece la de Beto
 
 
 def test_unexpected_error_does_not_stop_the_pipeline(video_file, storage, monkeypatch):

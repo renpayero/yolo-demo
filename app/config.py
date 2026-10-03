@@ -39,6 +39,22 @@ class DetectorConfig:
 
 
 @dataclass(frozen=True)
+class IdentificationConfig:
+    enabled: bool = False          # apagada por defecto: se prende desde la pestaña Personas
+    # Similitud coseno mínima. Medido con LFW (25 registrados, 465 fotos propias, 300 desconocidos), foto a foto:
+    # 0.40 → 100 % reconocidas, 1.3 % de desconocidos aceptados; 0.45 → 99.8 % y 0.3 %; 0.50 → 97.4 % y 0 %.
+    match_threshold: float = 0.45
+    min_margin: float = 0.08       # ventaja mínima sobre la segunda persona más parecida
+    votes_needed: int = 3          # coincidencias (de las últimas 5) para ponerle nombre a un track
+    min_face_px: int = 40          # caras más chicas no se intentan reconocer
+    checks_per_frame: int = 2      # cuántos tracks se revisan por frame (cuida los fps)
+    check_interval_s: float = 0.25 # tracks sin nombre: cada cuánto se los vuelve a mirar
+    # Tracks con nombre: cada cuánto se verifica que siga siendo la misma persona. Con 2 contradicciones seguidas
+    # para retirar el nombre, tras un cambio de ID del tracker el nombre equivocado dura como mucho ~2 s.
+    recheck_interval_s: float = 1.0
+
+
+@dataclass(frozen=True)
 class StreamConfig:
     max_width: int = 960
     fps: int = 15
@@ -50,6 +66,7 @@ class AppConfig:
     camera: CameraConfig = field(default_factory=CameraConfig)
     detector: DetectorConfig = field(default_factory=DetectorConfig)
     occupancy: OccupancyConfig = field(default_factory=OccupancyConfig)
+    identification: IdentificationConfig = field(default_factory=IdentificationConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
 
 
@@ -75,5 +92,6 @@ def load_config(path: Path) -> AppConfig:
         camera=camera,
         detector=_section(DetectorConfig, raw, "detector"),
         occupancy=_section(OccupancyConfig, raw, "occupancy"),
+        identification=_section(IdentificationConfig, raw, "identification"),
         stream=_section(StreamConfig, raw, "stream"),
     )

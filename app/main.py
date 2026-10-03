@@ -19,6 +19,7 @@ from app.config import load_config
 from app.dashboard_api import router as dashboard_router
 from app.detector import UltralyticsPersonDetector
 from app.overlay import resize_for_stream
+from app.persons_api import router as persons_router
 from app.pipeline import FrameHub, Pipeline
 from app.recorder import Recorder
 from app.storage import Storage
@@ -82,6 +83,7 @@ app = FastAPI(title="Visión en planta — demo", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(zones_router)
 app.include_router(dashboard_router)
+app.include_router(persons_router)
 
 
 @app.get("/", include_in_schema=False)

@@ -2,9 +2,16 @@ import { connectState } from './state.js';
 import { createLivePanel, renderConnectionPill } from './live.js';
 import { createZonesEditor } from './zones-editor.js';
 import { createDashboard } from './dashboard.js';
+import { createPersonsPanel } from './persons.js';
 
 const live = createLivePanel();
-const panels = { 'panel-live': live, 'panel-zones': createZonesEditor(), 'panel-metrics': createDashboard() };
+const persons = createPersonsPanel();
+const panels = {
+  'panel-live': live,
+  'panel-zones': createZonesEditor(),
+  'panel-metrics': createDashboard(),
+  'panel-persons': persons,
+};
 const pill = document.getElementById('conn-pill');
 
 // ---------- Pestañas ----------
@@ -55,5 +62,8 @@ connectState({
     badge.hidden = count === 0;
     badge.textContent = `⚠ ${count}`;
     badge.title = `${count} alerta(s) activa(s)`;
+    // Aviso permanente mientras se procesan caras, en cualquier pestaña.
+    document.getElementById('ident-pill').hidden = !state.identification?.enabled;
+    persons.sync(state);
   },
 });

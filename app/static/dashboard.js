@@ -118,6 +118,28 @@ function renderHeadcountTable({ headcount }) {
   fillTable('headcount-table', rows);
 }
 
+function renderPersonsTable({ persons }) {
+  const rows = persons.flatMap((person) =>
+    person.zones.map((zone, i) => {
+      const tr = document.createElement('tr');
+      if (i === 0) {
+        const name = cell(person.name, 'person-cell');
+        name.rowSpan = person.zones.length;
+        tr.append(name);
+      }
+      tr.append(
+        zoneCell(zone.zone_name, zone.color),
+        cell(String(zone.visits), 'num'),
+        cell(formatDuration(zone.time_s), 'num'),
+        cell(orDash(zone.avg_visit_s, formatDuration), 'num'),
+      );
+      return tr;
+    }),
+  );
+  fillTable('persons-table', rows, 'persons-table-empty');
+  $('persons-table').hidden = rows.length === 0;
+}
+
 function renderAlertsTable({ alerts }) {
   fillTable('alerts-table', alerts.slice(0, MAX_TABLE_ROWS).map((a) => {
     const tr = document.createElement('tr');
@@ -165,6 +187,7 @@ export function createDashboard() {
     renderCharts(data);
     renderTimelineTable(data);
     renderHeadcountTable(data);
+    renderPersonsTable(data);
     renderAlertsTable(data);
   }
 

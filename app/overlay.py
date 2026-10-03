@@ -153,10 +153,10 @@ def draw_detections(
     anchors: dict[int, Point] | None = None,
     track_zones: dict[int, list[tuple[Zone, float]]] | None = None,
     alert_track_ids: set[int] | None = None,
+    names: dict[int, str] | None = None,
 ) -> None:
-    """Caja e ID de cada persona; si está en zonas, el nombre y el tiempo dentro; y el punto que decide la zona.
-
-    Quien tiene una alerta activa (permanencia, zona restringida) se dibuja en rojo.
+    """Caja e ID de cada persona (y su nombre, si está identificada); si está en zonas, cuáles y hace cuánto;
+    y el punto que decide la zona. Quien tiene una alerta activa (permanencia, zona restringida) va en rojo.
     """
     h, w = frame.shape[:2]
     for det in detections:
@@ -166,6 +166,8 @@ def draw_detections(
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3 if in_alert else 2, cv2.LINE_AA)
 
         parts = [f"ID {det.track_id}"]
+        if names and det.track_id in names:
+            parts.append(names[det.track_id])
         parts += [f"{zone.name} {format_duration(dwell)}" for zone, dwell in (track_zones or {}).get(det.track_id, [])]
         text = " · ".join(parts)
         label_h = _label_patch(text, 14, BLACK, color, 230, True).shape[0]
@@ -180,7 +182,16 @@ def draw_detections(
 
 
 def draw_status_bar(frame: np.ndarray, text: str) -> None:
-    draw_label(frame, text, (8, 8), size=14, bg_alpha=150)
+    """Abajo a la derecha: arriba a la izquierda se pisaría con las etiquetas de zonas que empiezan en la esquina."""
+    w, h = _label_patch(text, 13, WHITE, BLACK, 150, False).shape[1::-1]
+    draw_label(frame, text, (frame.shape[1] - w - 8, frame.shape[0] - h - 8), size=13, bg_alpha=150)
+
+
+def draw_identification_badge(frame: np.ndarray) -> None:
+    """Aviso visible mientras se procesan caras: quien está frente a la cámara tiene que poder saberlo."""
+    text = "● Identificación facial activa"
+    width = _label_patch(text, 14, WHITE, ALERT_COLOR, 220, True).shape[1]
+    draw_label(frame, text, (frame.shape[1] - width - 8, 8), size=14, fg=WHITE, bg=ALERT_COLOR, bg_alpha=220, bold=True)
 
 
 def draw_alert_banner(frame: np.ndarray, messages: list[str]) -> None:

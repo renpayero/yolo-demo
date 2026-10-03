@@ -208,6 +208,20 @@ def test_no_rebind_if_new_track_is_far_away():
     assert all(e.kind != "rebind" for e in events)
 
 
+def test_split_track_closes_the_old_visit_and_opens_a_new_one():
+    """Otra persona heredó el track (se detectó por la cara): cada una se queda con su parte de la visita."""
+    eng = engine(LEFT, RIGHT)
+    run(eng, 0.0, 10.0, {7: IN_LEFT})
+    [old] = [o for o in eng.snapshot()[0].occupants]
+    events = eng.split_track(7, end_ts=6.0, start_ts=7.0)
+    assert [(e.kind, e.zone_id, e.track_id) for e in events] == [("exit", 1, 7), ("enter", 1, 7)]
+    assert events[0].ts == 6.0 and events[0].duration_s == pytest.approx(6.0)
+    assert events[1].enter_ts == 7.0 and events[1].visit_id != old.visit_id
+    status = eng.snapshot()[0]
+    assert status.empty_since is None and [o.dwell_s for o in status.occupants] == [pytest.approx(3.0)]
+    assert eng.split_track(99, 1.0, 2.0) == []  # track sin visitas: nada
+
+
 def test_no_frames_still_closes_after_grace():
     """Si la cámara se cae, el pipeline sigue llamando a update() sin detecciones."""
     eng = engine()

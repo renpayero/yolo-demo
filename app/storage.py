@@ -14,6 +14,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from app.metrics import AlertRow, SessionRow, VisitRow
 from app.zones import Zone, ZoneSpec
 
@@ -77,11 +79,47 @@ MIGRATIONS: tuple[str, ...] = (
     );
     CREATE INDEX alerts_by_time ON alerts (camera_id, ts);
     """,
+    # 3: personas registradas con consentimiento y sus huellas faciales (nunca fotos).
+    """
+    CREATE TABLE persons (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL UNIQUE,
+        consent_ts  REAL NOT NULL,          -- cuándo se registró su consentimiento
+        created_ts  REAL NOT NULL
+    );
+    CREATE TABLE face_embeddings (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        person_id   INTEGER NOT NULL REFERENCES persons (id),
+        vector      BLOB NOT NULL,          -- 128 float32 normalizados
+        created_ts  REAL NOT NULL
+    );
+    CREATE INDEX face_embeddings_by_person ON face_embeddings (person_id);
+    """,
 )
+
+EMBEDDING_DIM = 128
 
 
 class ZoneNameTaken(ValueError):
     pass
+
+
+class PersonNameTaken(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class Person:
+    id: int
+    name: str
+    consent_ts: float
+    samples: int
+
+
+@dataclass(frozen=True)
+class DeletionReport:
+    visits_anonymized: int
+    alerts_anonymized: int
 
 
 @dataclass(frozen=True)
@@ -185,6 +223,66 @@ class Storage:
             raise ZoneNameTaken("nombres repetidos en el archivo importado") from exc
         return self.list_zones(camera_id)
 
+    # ---------- Personas registradas ----------
+
+    def list_persons(self) -> list[Person]:
+        with self._tx() as con:
+            rows = con.execute(
+                "SELECT p.id, p.name, p.consent_ts, COUNT(e.id) AS samples FROM persons p"
+                " LEFT JOIN face_embeddings e ON e.person_id = p.id GROUP BY p.id ORDER BY p.name"
+            ).fetchall()
+        return [Person(r["id"], r["name"], r["consent_ts"], r["samples"]) for r in rows]
+
+    def person_names(self) -> dict[int, str]:
+        with self._tx() as con:
+            return {r["id"]: r["name"] for r in con.execute("SELECT id, name FROM persons")}
+
+    def create_person(self, name: str, embeddings: np.ndarray) -> Person:
+        """Alta con su consentimiento y sus huellas, todo junto: sin huellas no queda ninguna persona a medias."""
+        now = time.time()
+        try:
+            with self._tx() as con:
+                person_id = con.execute(
+                    "INSERT INTO persons (name, consent_ts, created_ts) VALUES (?, ?, ?)", (name, now, now)
+                ).lastrowid
+                self._insert_embeddings(con, person_id, embeddings, now)
+        except sqlite3.IntegrityError as exc:
+            raise PersonNameTaken(name) from exc
+        return Person(person_id, name, now, len(embeddings))
+
+    def add_embeddings(self, person_id: int, embeddings: np.ndarray) -> bool:
+        with self._tx() as con:
+            if con.execute("SELECT 1 FROM persons WHERE id = ?", (person_id,)).fetchone() is None:
+                return False
+            self._insert_embeddings(con, person_id, embeddings, time.time())
+        return True
+
+    @staticmethod
+    def _insert_embeddings(con: sqlite3.Connection, person_id: int, embeddings: np.ndarray, now: float) -> None:
+        vectors = np.asarray(embeddings, dtype=np.float32).reshape(-1, EMBEDDING_DIM)
+        con.executemany(
+            "INSERT INTO face_embeddings (person_id, vector, created_ts) VALUES (?, ?, ?)",
+            [(person_id, v.tobytes(), now) for v in vectors],
+        )
+
+    def load_embeddings(self) -> dict[int, np.ndarray]:
+        out: dict[int, list[np.ndarray]] = {}
+        with self._tx() as con:
+            for r in con.execute("SELECT person_id, vector FROM face_embeddings"):
+                out.setdefault(r["person_id"], []).append(np.frombuffer(r["vector"], dtype=np.float32))
+        return {pid: np.vstack(vectors) for pid, vectors in out.items()}
+
+    def delete_person(self, person_id: int) -> DeletionReport | None:
+        """Borra a la persona y sus huellas, y deja su historial anónimo (las visitas siguen contando)."""
+        with self._tx() as con:
+            if con.execute("SELECT 1 FROM persons WHERE id = ?", (person_id,)).fetchone() is None:
+                return None
+            visits = con.execute("UPDATE visits SET person_id = NULL WHERE person_id = ?", (person_id,)).rowcount
+            alerts = con.execute("UPDATE alerts SET person_id = NULL WHERE person_id = ?", (person_id,)).rowcount
+            con.execute("DELETE FROM face_embeddings WHERE person_id = ?", (person_id,))
+            con.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+        return DeletionReport(visits_anonymized=visits, alerts_anonymized=alerts)
+
     # ---------- Lectura para el dashboard ----------
 
     def dashboard_rows(
@@ -206,7 +304,7 @@ class Storage:
             ]
             alerts = [
                 AlertRow(r["id"], r["kind"], r["zone_id"], r["zone_name"], r["track_id"], r["ts"],
-                         r["resolved_ts"], r["message"])
+                         r["resolved_ts"], r["message"], r["person_id"])
                 for r in con.execute(
                     "SELECT * FROM alerts WHERE camera_id = ? AND ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?",
                     (camera_id, lo, hi, MAX_DASHBOARD_ALERTS),

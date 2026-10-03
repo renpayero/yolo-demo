@@ -97,7 +97,7 @@ function renderZones(zones) {
         ? plural(zone.count, 'persona', 'personas')
         : `vacía ${zone.empty_for_s != null ? formatDuration(zone.empty_for_s) : ''}`;
       item.querySelector('.zone-occupants').textContent = zone.occupants
-        .map((o) => `ID ${o.track_id} · ${formatDuration(o.dwell_s)}`)
+        .map((o) => `${o.name ? `${o.name} (ID ${o.track_id})` : `ID ${o.track_id}`} · ${formatDuration(o.dwell_s)}`)
         .join('   ');
       return item;
     }),

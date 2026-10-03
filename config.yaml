@@ -25,6 +25,13 @@ occupancy:
   enter_debounce_s: 0.5   # tiempo que tiene que estar dentro para contar como entrada
   exit_grace_s: 3.0       # tiempo sin verlo dentro antes de dar la salida (tolera parpadeos del detector)
 
+identification:
+  # Reconocimiento facial de personas registradas CON su consentimiento (pestaña Personas).
+  # Apagado, el sistema funciona igual en forma anónima y no procesa ninguna cara.
+  enabled: false        # cómo arranca; se prende y apaga desde la web
+  match_threshold: 0.45 # similitud mínima para reconocer (subir si confunde personas, bajar si no reconoce)
+  min_margin: 0.08      # ventaja mínima sobre la segunda persona más parecida
+
 stream:
   max_width: 960       # ancho del video que se manda al navegador
   fps: 15

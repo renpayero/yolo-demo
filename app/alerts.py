@@ -9,7 +9,7 @@ Reglas (configurables por zona):
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -45,6 +45,11 @@ class AlertEngine:
     def __init__(self) -> None:
         self._active: dict[AlertKey, Alert] = {}
         self._next_uid = 1
+        self._names: Mapping[int, str] = {}
+
+    def _who(self, track_id: int) -> str:
+        name = self._names.get(track_id)
+        return f"{name} (ID {track_id})" if name else f"persona {track_id}"
 
     @property
     def active(self) -> list[Alert]:
@@ -60,15 +65,17 @@ class AlertEngine:
         statuses: Iterable[ZoneStatus],
         events: Iterable[ZoneEvent],
         monitoring_since: float | None,
+        names: Mapping[int, str] | None = None,   # track → nombre, si la persona está identificada
     ) -> list[AlertChange]:
         statuses = list(statuses)
         zones = {s.zone.id: s.zone for s in statuses}
+        self._names = names or {}
         changes: list[AlertChange] = []
 
         for event in events:
             zone = zones.get(event.zone_id)
             if event.kind == "enter" and zone is not None and zone.kind == "restricted":
-                message = f"Ingreso a zona restringida «{zone.name}» (persona {event.track_id})"
+                message = f"Ingreso a zona restringida «{zone.name}» ({self._who(event.track_id)})"
                 changes += self._raise(
                     ("restricted", zone.id, event.visit_id), "restricted", zone, ts, message,
                     track_id=event.track_id, visit_id=event.visit_id,
@@ -94,7 +101,7 @@ class AlertEngine:
         for occupant in status.occupants:
             if occupant.dwell_s > zone.max_dwell_s:
                 message = (
-                    f"Permanencia prolongada en {zone.name}: persona {occupant.track_id} "
+                    f"Permanencia prolongada en {zone.name}: {self._who(occupant.track_id)} "
                     f"lleva más de {format_duration(zone.max_dwell_s)}"
                 )
                 changes += self._raise(

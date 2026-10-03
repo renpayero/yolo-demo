@@ -32,4 +32,7 @@ def dashboard(
     storage: Storage = request.app.state.storage
     camera_id = request.app.state.cfg.camera.id
     sessions, visits, alerts = storage.dashboard_rows(camera_id, start, end)
-    return build_dashboard(storage.list_zones(camera_id), sessions, visits, alerts, lo=start, hi=end, now=now)
+    return build_dashboard(
+        storage.list_zones(camera_id), sessions, visits, alerts, lo=start, hi=end, now=now,
+        person_names=storage.person_names(),
+    )

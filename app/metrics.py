@@ -11,7 +11,7 @@ Definiciones (para un rango [desde, hasta]):
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,6 +45,7 @@ class AlertRow:
     ts: float
     resolved_ts: float | None
     message: str
+    person_id: int | None = None
 
 
 # ---------- Operaciones con intervalos ----------
@@ -120,11 +121,13 @@ def build_dashboard(
     lo: float,
     hi: float,
     now: float,
+    person_names: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
     hi = min(hi, now)
     monitored = merge(clip(((s.start, s.end if s.end is not None else now) for s in sessions), lo, hi))
     monitored_s = total(monitored)
 
+    visits = list(visits)
     visits_by_zone: dict[int, list[Interval]] = defaultdict(list)
     for v in visits:
         visits_by_zone[v.zone_id].append((v.start, v.end if v.end is not None else now))
@@ -169,6 +172,7 @@ def build_dashboard(
             "peak_people": max((p["total"] for p in headcount), default=0),
         },
         "zones": kpis,
+        "persons": _per_person(zones, visits, alerts_in_range, person_names or {}, lo, hi, now),
         "timeline": timeline,
         "unmonitored": gaps(monitored, lo, hi),
         "headcount": headcount,
@@ -180,6 +184,47 @@ def build_dashboard(
             for a in alerts_in_range
         ],
     }
+
+
+def _per_person(
+    zones: Sequence[Zone],
+    visits: Sequence[VisitRow],
+    alerts: Sequence[AlertRow],
+    person_names: Mapping[int, str],
+    lo: float,
+    hi: float,
+    now: float,
+) -> list[dict[str, Any]]:
+    """Tiempo y visitas por zona de cada persona identificada (solo las que tuvieron actividad en el rango)."""
+    out = []
+    for person_id, name in sorted(person_names.items(), key=lambda item: item[1].lower()):
+        rows = []
+        for zone in zones:
+            intervals = [
+                (v.start, v.end if v.end is not None else now)
+                for v in visits if v.person_id == person_id and v.zone_id == zone.id
+            ]
+            time_s = total(clip(intervals, lo, hi))
+            started = [e - s for s, e in intervals if lo <= s < hi]
+            if time_s > 0 or started:
+                rows.append({
+                    "zone_id": zone.id,
+                    "zone_name": zone.name,
+                    "color": zone.color,
+                    "visits": len(started),
+                    "time_s": time_s,
+                    "avg_visit_s": sum(started) / len(started) if started else None,
+                })
+        if rows:
+            out.append({
+                "id": person_id,
+                "name": name,
+                "time_s": sum(r["time_s"] for r in rows),
+                "visits": sum(r["visits"] for r in rows),
+                "alerts": sum(1 for a in alerts if a.person_id == person_id),
+                "zones": rows,
+            })
+    return out
 
 
 def _headcount(
