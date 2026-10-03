@@ -29,6 +29,7 @@ services:
       - ./config.yaml:/srv/config.yaml:ro
       - ./app:/srv/app:ro       # el código se toma de la carpeta: cambios con solo reiniciar
       - ./tests:/srv/tests:ro
+      - ./media:/media:ro       # videos grabados para analizar: CAMERA_SOURCE=/media/archivo.mp4
       - vision-data:/data       # base SQLite (volumen de Docker, no carpeta de Windows)
 
 volumes:

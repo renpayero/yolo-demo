@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from app.capture import FrameSource, mask_credentials
+from app.capture import FrameSource, ffmpeg_capture_options, mask_credentials
 
 
 @pytest.fixture
@@ -40,6 +40,31 @@ def test_reads_file_and_loops(video_file):
         assert source.status().reconnects == 0  # dar la vuelta a un archivo no es una reconexión
     finally:
         source.stop()
+
+
+def test_reads_h264_mp4_file():
+    # Lo que graba una cámara IP: H.264 en MP4. Con las opciones de baja latencia de RTSP ("fflags;nobuffer")
+    # FFmpeg abría el archivo pero no entregaba ningún frame. (OpenCV no puede escribir H.264: va un clip fijo.)
+    source = FrameSource(str(Path(__file__).parent / "data" / "clip_h264.mp4"))
+    source.start()
+    try:
+        assert source.wait_frame(0, timeout=5) is not None
+    finally:
+        source.stop()
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("rtsp://mediamtx:8554/webcam", "rtsp_transport;tcp|fflags;nobuffer"),
+        ("RTSP://user:pass@10.0.0.5/stream1", "rtsp_transport;tcp|fflags;nobuffer"),
+        ("rtsps://camara.local/stream", "rtsp_transport;tcp|fflags;nobuffer"),
+        ("/media/video.mp4", ""),
+        ("http://camara.local/video.mjpg", ""),
+    ],
+)
+def test_low_latency_options_only_for_rtsp(source, expected):
+    assert ffmpeg_capture_options(source) == expected
 
 
 def test_wait_frame_only_returns_newer_frames(video_file):

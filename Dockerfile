@@ -21,8 +21,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 ENV YOLO_OFFLINE=1 \
     YOLO_AUTOINSTALL=0 \
     YOLO_CONFIG_DIR=/tmp \
-    OPENCV_LOG_LEVEL=ERROR \
-    OPENCV_FFMPEG_CAPTURE_OPTIONS="rtsp_transport;tcp|fflags;nobuffer"
+    OPENCV_LOG_LEVEL=ERROR
+# Las opciones de FFmpeg para RTSP (TCP, baja latencia) las pone app/capture.py solo para cámaras: con un
+# archivo H.264 rompen la lectura.
 
 # Pesos de los modelos dentro de la imagen: el contenedor no necesita internet para arrancar.
 # Detección de personas (s con GPU, n con CPU) y pose para el análisis de posturas.

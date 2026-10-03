@@ -6,6 +6,7 @@ reintenta con backoff exponencial sin detener la aplicación.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 import time
@@ -44,6 +45,15 @@ class SourceStatus:
 def mask_credentials(url: str) -> str:
     """Oculta la contraseña de una URL tipo rtsp://usuario:clave@host para logs y UI."""
     return re.sub(r"//([^:/@]+):([^@/]+)@", r"//\1:***@", url)
+
+
+def ffmpeg_capture_options(source: str) -> str:
+    """Opciones de FFmpeg para abrir `source` (OpenCV las lee de OPENCV_FFMPEG_CAPTURE_OPTIONS en cada apertura).
+
+    Cámaras RTSP: por TCP (sin imágenes rotas por paquetes perdidos) y sin buffer de arranque (menos latencia).
+    Solo para RTSP: con un archivo H.264/H.265, "nobuffer" hace que FFmpeg lo abra pero no entregue ningún frame.
+    """
+    return "rtsp_transport;tcp|fflags;nobuffer" if source.lower().startswith(("rtsp://", "rtsps://")) else ""
 
 
 def _is_local_file(source: str) -> bool:
@@ -100,6 +110,7 @@ class FrameSource:
             cap = cv2.VideoCapture(int(self._source))
         else:
             params = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, OPEN_TIMEOUT_MS, cv2.CAP_PROP_READ_TIMEOUT_MSEC, READ_TIMEOUT_MS]
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ffmpeg_capture_options(self._source)
             cap = cv2.VideoCapture(self._source, cv2.CAP_FFMPEG, params)
         if cap.isOpened():
             return cap
