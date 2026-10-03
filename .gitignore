@@ -1,10 +1,10 @@
-# Binarios descargados (ffmpeg portable, video de prueba)
+# Binarios descargados (ffmpeg portable) y videos (de prueba o grabados en planta: muestran personas)
 tools/
-media/*.avi
-media/*.mp4
+media/
 
-# Datos locales
-data/
+# Datos locales (los backups de la base tienen datos personales y huellas faciales)
+/data/
+*.db
 
 # Python
 __pycache__/
