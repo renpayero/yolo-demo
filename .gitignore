@@ -10,3 +10,6 @@ data/
 __pycache__/
 .pytest_cache/
 *.pyc
+
+# Material de presentación con imágenes de terceros (videos/fotos de ejemplo de OpenCV)
+docs/viabilidad_reconocimiento_facial.html
